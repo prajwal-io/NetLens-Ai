@@ -930,83 +930,8 @@ The November 10 target is an aggressive MVP target. Core reliability should take
 
 ---
 
-## 14. Faculty Demonstration Strategy
 
-The faculty demonstration should be short, interactive, and technically verifiable.
-
-### Demo Duration
-
-Approximately five minutes.
-
-### Stage 1: Normal Traffic
-
-Time: 00:00–00:40
-
-- Open the Command Center.
-- Explain the overall system.
-- Run a normal historical traffic replay.
-- Display healthy network activity.
-- Introduce the ML monitoring workflow.
-
-### Stage 2: Suspicious Traffic
-
-Time: 00:40–01:40
-
-- Select a prepared suspicious traffic scenario.
-- Replay records through the trained model.
-- Display classification changes.
-- Highlight suspicious results.
-- Show updated traffic charts.
-
-The replay must represent actual model processing of historical records.
-
-### Stage 3: Threat Investigation
-
-Time: 01:40–02:40
-
-- Select a suspicious flow record.
-- Display its network features.
-- Show its predicted class.
-- Explain its model score if available.
-- Show how the system helps investigate traffic.
-
-### Stage 4: Faculty Interaction
-
-Time: 02:40–03:40
-
-- Invite the faculty to upload a prepared compatible CSV.
-- Validate the input.
-- Run actual model inference.
-- Display results.
-- Explain the workflow.
-
-This stage demonstrates that the project is functional rather than merely a scripted animation.
-
-### Stage 5: Model Evaluation and Reporting
-
-Time: 03:40–05:00
-
-- Open Model Lab.
-- Show model information.
-- Explain accuracy, precision, recall, and F1-score.
-- Display confusion matrix.
-- Export the analysis report.
-- Summarize the project's contribution.
-
-### Demo Rules
-
-- Use a working trained model.
-- Use held-out demonstration records.
-- Keep data sources clearly labeled.
-- Do not simulate attacks on public or institutional networks.
-- Prepare offline backups.
-- Avoid fake predictions.
-- Make all interactive actions functional.
-- Keep the demonstration reproducible.
-
----
-
-## 15. Testing Checklist
+## 14. Testing Checklist
 
 ### Frontend
 
@@ -1054,20 +979,9 @@ Time: 03:40–05:00
 - [ ] Replay scenarios work.
 - [ ] Reports match analysis results.
 
-### Faculty Demo
-
-- [ ] Application works locally.
-- [ ] Demo works without Wi-Fi.
-- [ ] Test CSV files are prepared.
-- [ ] Historical replay data is available.
-- [ ] Model evaluation is ready.
-- [ ] Report generation works.
-- [ ] Backup demonstration is prepared.
-- [ ] Presentation fits within five minutes.
-
 ---
 
-## 16. Future Enhancements
+## 15. Future Enhancements
 
 Features outside the initial mini-project scope:
 
@@ -1086,7 +1000,7 @@ These are future possibilities, not features promised for November 10.
 
 ---
 
-## 17. Responsible Use and Limitations
+## 16. Responsible Use and Limitations
 
 NetSight AI is an academic network traffic analysis project.
 
@@ -1106,7 +1020,7 @@ The project's results must be represented accurately.
 
 ---
 
-## 18. References
+## 1.7 References
 
 ### Academic References
 
@@ -1140,7 +1054,7 @@ https://recharts.org/
 
 ---
 
-## 19. Immediate Development Priority
+## 18. Immediate Development Priority
 
 Start with Phase 1.
 
