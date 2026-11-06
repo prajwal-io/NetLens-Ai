@@ -1,4 +1,4 @@
-# Frontend completion: 18-area checklist
+﻿# Frontend completion: 18-area checklist
 
 | Area | Delivered |
 |---|---|
@@ -35,8 +35,8 @@
 ## Run
 Keep FastAPI on port 8000.
 From frontend: npm.cmd run dev for port 5173.
-Production: npm.cmd run build then npm.cmd run preview -- --port 4175.
-Preview: http://127.0.0.1:4175/
+Production: npm.cmd run build then npm.cmd run preview -- --port 4177.
+Preview: http://127.0.0.1:4177/
 
 Tests use AUDIT_URL to select a running frontend. completion-tests.mjs and recovery-tests.mjs accept BROWSER_EXECUTABLE for Chrome or Edge.
 
@@ -53,6 +53,11 @@ Frontend-only scope confirmed by the user. Final fixes:
 
 Verified production build, 17 backend tests, full interaction suite, targeted malformed-response/deep-link tests, and zero automated accessibility violations across all seven routes at desktop and phone widths. The local backend was restarted.
 
-Current preview: http://127.0.0.1:4176/
+Current preview: http://127.0.0.1:4177/
 Backend: http://127.0.0.1:8000/
 ML inference, true historical replay, and prediction report APIs remain outside this frontend-only finalization.
+
+## Theme and telemetry background / November 6
+The interface now uses a near-black canvas, blue network signals, and red suspicious-flow marks. The original logo artwork remains unchanged and sits on a small light panel for contrast. Slow packet-like text falls in eight narrow streams at desktop edges and two at phone widths. The center remains clear. The motion pauses when requested, when the page is hidden, and when reduced motion is enabled.
+
+Verified the production build, all seven routes at desktop and phone sizes, the browser interaction suite, and the FastAPI health and CSV-validation endpoints. Accessibility scans report zero violations at both tested widths. Preview: http://127.0.0.1:4177/.

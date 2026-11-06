@@ -573,24 +573,24 @@ If the model has not been trained or cannot load, prediction requests should ret
 
 ### Visual Direction
 
-Build a premium, modern, technical dashboard with a clean and distinct design identity.
+Build a premium, modern, technical interface with an editorial layout and a clear, distinct identity.
 
 Avoid generic cybersecurity templates and overused AI-generated website aesthetics.
 
 ### Theme
 
-Primary theme: Light
+Primary theme: Dark
 
 ### Color Palette
 
 | Color | Hex | Usage |
 |---|---|---|
-| Canvas | #F7F8FA | Main background |
-| Ink | #171C2A | Typography |
-| Signal Blue | #3268F5 | Primary interactions |
-| Threat Red | #ED554A | Suspicious traffic |
-| Normal Green | #25A47A | Healthy traffic |
-| White | #FFFFFF | Cards |
+| Canvas | #090D14 | Main background |
+| Ink | #E9EEF7 | Main text |
+| Signal Blue | #70A5FF | Network activity and primary interactions |
+| Threat Red | #F36F7B | Suspicious traffic |
+| Normal Green | #43C9A2 | Healthy status |
+| Surface | #101722 | Panels and cards |
 
 ### Typography
 
@@ -600,7 +600,7 @@ Primary theme: Light
 
 ### Layout
 
-- Compact left sidebar.
+- Compact, floating horizontal navigation.
 - Consistent navigation.
 - Spacious dashboard grid.
 - Clearly differentiated sections.
@@ -623,6 +623,10 @@ Examples:
 - Expandable alert panels.
 - Replay progress indicators.
 - Loading and success states.
+- Slow, terminal-style telemetry marks at the outer edges of the background.
+- A pause control, hidden-page pause, and reduced-motion support for background animation.
+
+The background marks are decorative. They must stay clear of content and must not look like live traffic.
 
 ### Design Rules
 

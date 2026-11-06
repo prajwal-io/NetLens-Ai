@@ -24,6 +24,7 @@ import './style.css';
 import './editorial.css';
 import './quality.css';
 import './completion.css';
+import './theme.css';
 
 const navigation = [
  {path:'/command-center',name:'Command Center',icon:LayoutDashboard},

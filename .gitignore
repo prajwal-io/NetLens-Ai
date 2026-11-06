@@ -9,4 +9,5 @@ __pycache__/
 .env
 test-results/
 .pytest-tmp/
+backend/.pytest-workspace-qa/
 *.tsbuildinfo
