@@ -1,0 +1,6 @@
+import { flows } from '../fixtures/sample';
+import { Empty } from './ui';
+export function FlowTable({search='',selected,onSelect,rows:providedRows}:{search?:string;selected?:string;onSelect?:(id:string)=>void;rows?:typeof flows}) {
+const rows=providedRows??flows.filter(f=>Object.values(f).join(' ').toLowerCase().includes(search.toLowerCase()));
+return <div className="table-scroll" tabIndex={0} role="region" aria-label="Sample flow records"><table><caption className="sr-only">Illustrative network flow records, not ML predictions</caption><thead><tr><th scope="col">Flow / source address</th><th scope="col" className="numeric">Destination</th><th scope="col" className="numeric">Port</th><th scope="col">Sample label</th></tr></thead><tbody>{rows.map(f=><tr key={f.id} className={selected===f.id?'selected-flow':undefined}><td>{onSelect?<button className="flow-select" aria-pressed={selected===f.id} onClick={()=>onSelect(f.id)}>{f.id}<span className="sr-only">, inspect sample flow</span></button>:<strong>{f.id}</strong>}<code>{f.source}</code></td><td className="numeric"><code>{f.destination}</code></td><td className="numeric">{f.port}</td><td><span className={f.label==='Normal'?'tag green':'tag red'}>{f.label}</span></td></tr>)}</tbody></table>{!rows.length&&<Empty title="No matching sample flows">Try another address, port, or flow ID.</Empty>}</div>
+}

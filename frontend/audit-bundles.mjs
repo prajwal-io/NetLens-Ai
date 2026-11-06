@@ -1,0 +1,18 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+const page=await browser.newPage({viewport:{width:390,height:1000}});
+const requests=[];page.on('request',r=>requests.push(r.url()));
+await page.goto('http://127.0.0.1:4174');
+await page.getByRole('heading',{level:1}).waitFor();
+assert(!requests.some(u=>/\/assets\/charts-/.test(u)),'Landing must not download chart code');
+await page.locator('.mobile-navigation summary').click();
+await page.screenshot({path:'../docs/mobile-navigation.png'});
+assert.equal(await page.locator('.mobile-navigation').getByRole('link').count(),5);
+await page.locator('.mobile-navigation').getByRole('link',{name:'Command Center',exact:true}).click();
+await page.getByText('Backend connected',{exact:true}).waitFor();
+assert(!requests.some(u=>/\/assets\/charts-/.test(u)),'Native SVG chart should need no external chart bundle');
+console.log('PASS: no chart download on landing; dashboard renders a lightweight native SVG; real API connected through preview proxy.');
+fs.writeFileSync('../docs/bundle-network-check.json',JSON.stringify({landingLoadsCharts:false,dashboardLoadsCharts:false,apiConnected:true},null,2));
+await browser.close();

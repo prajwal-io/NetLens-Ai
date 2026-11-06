@@ -1,0 +1,72 @@
+[
+  {
+    "path": "/",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/command-center",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/network-pulse",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/traffic-analyzer",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/threat-investigation",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/model-lab",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/reports",
+    "width": 1440,
+    "violations": []
+  },
+  {
+    "path": "/",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/command-center",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/network-pulse",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/traffic-analyzer",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/threat-investigation",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/model-lab",
+    "width": 390,
+    "violations": []
+  },
+  {
+    "path": "/reports",
+    "width": 390,
+    "violations": []
+  }
+]

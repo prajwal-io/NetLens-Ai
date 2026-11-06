@@ -1,0 +1,38 @@
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+const base=process.env.AUDIT_URL||'http://127.0.0.1:4176';
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+const page=await browser.newPage({viewport:{width:390,height:900}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto(base+'/threat-investigation?flow=missing-record');
+ await page.getByRole('heading',{name:'Flow not found',exact:true}).waitFor();
+ assert.equal(await page.getByRole('heading',{name:'FL-0284',exact:true}).count(),0);
+ await page.getByRole('button',{name:'Back to filtered flows',exact:true}).click();
+ await page.locator('.flow-list-pane').waitFor({state:'visible'});
+ await page.goto(base+'/traffic-analyzer');
+ await page.getByLabel('Traffic CSV file').setInputFiles('../data/samples/valid-flows.csv');
+ await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
+ await page.getByText('3 flows validated',{exact:true}).waitFor();
+ await page.goto(base+'/reports');
+ await page.getByLabel('Find a validated file').fill('no-matching-file');
+ await page.getByRole('heading',{name:'No matching receipt',exact:true}).waitFor();
+ await page.goto(base+'/command-center');await page.goto(base+'/reports');
+ assert.equal(await page.getByLabel('Find a validated file').inputValue(),'no-matching-file');
+ await page.getByLabel('Find a validated file').fill('');
+ await page.getByRole('button',{name:'Download validation receipt',exact:true}).waitFor();
+ await page.goto(base+'/traffic-analyzer');
+ await page.route('**/traffic/validate',r=>r.fulfill({json:{valid:true,filename:'bad.csv',message:'ok',row_count:1,columns:['Port'],preview:[{Port:{unexpected:'object'}}]}}));
+ await page.getByLabel('Traffic CSV file').setInputFiles('../data/samples/valid-flows.csv');
+ await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
+ await page.getByRole('alert').filter({hasText:'The validation response was incomplete'}).waitFor();
+ assert.equal(await page.getByText('3 flows validated',{exact:true}).count(),0);
+ await page.route('**/api/v1/health',r=>r.fulfill({json:null}));
+ await page.getByRole('button',{name:'Refresh backend status'}).click();
+ await page.getByText('The backend returned an invalid health response.',{exact:false}).waitFor();
+ await page.unroute('**/api/v1/health');
+ await page.getByRole('button',{name:'Retry connection'}).click();
+ await page.getByText('Backend connected',{exact:true}).waitFor();
+ assert.deepEqual(errors,[]);
+ console.log('PASS: invalid flow links, persistent report search, filtered empty states, malformed validation and health responses, and retry recovery.');
+}finally{await browser.close()}
