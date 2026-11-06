@@ -1,21 +1,61 @@
-# Phase 1 architecture
+# NetSight AI architecture
 
-React Router provides six independent workspace routes. Shared panels, status handling, fixtures, and the typed API client separate interface concerns. Vite bundles fonts locally; no CDN is needed at runtime. Tailwind v4 is wired through the Vite plugin, alongside custom layout tokens.
+The frontend is a React and TypeScript application. Its centralized API client calls the FastAPI service through Vite's same-origin `/api` proxy during local development. The backend separates routes, request schemas, CSV validation, model loading/inference, settings, and SQLite initialization.
 
-FastAPI routes delegate CSV inspection to a validation service and return typed response schemas. Settings control local CORS, upload limits, and SQLite location. Lifespan initializes a versioned SQLite schema with foreign keys and WAL; validation does not persist uploaded traffic. No inference endpoints or trained artifacts are included.
+```text
+CSV upload
+   |
+   v
+FastAPI size + CSV checks ----> /traffic/validate
+   |
+   +--> select 8 numeric network measurements
+   |
+   v
+Loaded sklearn pipeline -----> /traffic/analyze
+   |
+   +--> labels + anomaly scores + counts + 5-row preview
+   |
+   +--> React Traffic Analyzer and CSV predictions export
+```
 
-## CSV contract: foundation-flow-v1
+## Backend endpoints
 
-UTF-8 CSV, optionally with BOM; headers are trimmed and must be unique. Required columns: Destination Port, Flow Duration, Total Fwd Packets, Total Backward Packets. All required values must be finite and nonnegative. Ports and packet counts are integers; ports may not exceed 65535. Flow Duration is in microseconds. Additional columns are accepted and returned in the preview. This is a Phase 1 subset, not the eventual model feature contract.
+Base URL: `http://127.0.0.1:8000/api/v1`
 
-Maximum file payload: 5 MiB; maximum nonempty data rows: 50,000. Parsing stops at the row limit. Preview contains at most five rows. CSV values are rendered as text. Success returns row_count, columns, preview, schema_name, valid and message. Failures use {error: {code, message}} with HTTP 413, 415, or 422. Missing multipart files return 422. Unexpected server errors return a generic 500 while server logs retain details.
+| Method | Endpoint | Behavior |
+|---|---|---|
+| GET | `/health` | FastAPI status and whether the evaluated local artifact loaded |
+| POST | `/traffic/validate` | Check the model input schema and return a text preview; does not predict |
+| POST | `/traffic/analyze` | Run the saved pipeline and return one prediction per input row |
+| GET | `/model/info` | Return actual dataset, feature, split, and held-out metric metadata |
 
-## Scope and transparency
+Missing or invalid model artifacts do not prevent the health route from starting. `/traffic/analyze` and `/model/info` return HTTP 503 until a successfully evaluated artifact is installed. API errors use `{ "error": { "code": ..., "message": ... } }`.
 
-Dashboard totals are computed from fixture time buckets; the recent-flow table is an illustrative subset. All sample classifications are labeled. Model Lab has no fabricated metrics. Network Pulse and Reports are honest foundations with later-phase empty states. Historical replay, inference, investigation details, analysis persistence, and exports are deferred to their README phases.
+## CSV contract: `network-metrics-v1`
 
-Health is polled every 30 seconds and can be manually retried. Request timeout is 15 seconds. Upload validation has separate pending, success, and recoverable error states. A backend outage does not replace sample values with invented live data.
+Required finite, nonnegative numeric columns:
 
-## Visual direction
+- `throughput`
+- `congestion`
+- `packet_loss`
+- `latency`
+- `jitter`
+- `Percentage video occupancy`
+- `Bitrate video`
+- `Number videos`
 
-Framed sheet, seed 439000391. Preserve the README palette and typography. The blue traffic series and custom network mark identify NetSight; neutral chrome keeps attention on evidence. Main question: what does this sample traffic window contain, and is the local workspace ready for a dataset?
+UTF-8 CSV with optional BOM, unique headers, up to 5 MiB and 50,000 rows. Extra columns are allowed and visible in validation preview but are never passed to the classifier. This prevents the dataset's target `anomaly` or helper `anomaly_*` labels from leaking into predictions.
+
+The `/traffic/analyze` response includes a generated ID, source file, model version, threshold, total and class counts, one `row_id`/label/score per row, and feature values for up to five preview rows. The CSV export contains the prediction labels and scores for all rows, not the raw input data.
+
+## Training and evaluation
+
+Dataset acquisition is handled by `backend/ml/download_dataset.py` using KaggleHub. Raw files are cached under `data/kagglehub-cache/`, excluded from Git, and not copied into application code. Training uses `network_dataset_labeled.csv`.
+
+The pipeline uses measured telemetry values only. Timestamp is used to order records but is not a model feature. It compares Random Forest and Logistic Regression on the middle chronological validation segment, selects by anomalous-class F1, and selects the score threshold on validation. It fits the selected pipeline on the first 80% and evaluates once on the final 20%.
+
+Current data limitations and measured results are documented in [model-evaluation.md](model-evaluation.md). The target represents network performance anomalies, not malicious behavior. A score is the model's `predict_proba` output for class 1; it is not calibrated and does not prove an incident.
+
+## Persistence and boundaries
+
+SQLite initializes a version table, but uploaded rows and inference history are not persisted. Validation receipts remain browser-session metadata. The trained pipeline and its JSON metadata live in `backend/ml/artifacts/`; both are generated by the training/evaluation scripts. Historical replay APIs, long-term analysis history, and PDF report storage are not part of this implementation.

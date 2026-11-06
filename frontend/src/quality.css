@@ -1,4 +1,4 @@
-/* Shared workspace polish and accessible navigation. */
+﻿/* Shared workspace polish and accessible navigation. */
 .mobile-navigation{display:none}
 .topology-edge{width:clamp(64px,8vw,118px)}
 .topology-background{opacity:.85}
@@ -75,7 +75,7 @@
 .validation-status{padding:0 24px;font-size:13px;color:#52657e}
 .validation-status:empty{display:none}
 .workspace-main .table-scroll{overscroll-behavior-x:contain}
-.table-scroll caption{text-align:left;font-size:12px;padding:16px 0;color:#53667f}
+.table-scroll caption{text-align:left;font-size:12px;padding:16px 0;color:var(--muted)}
 .workspace-main .empty{padding:40px 24px;background:#f5f8fb}
 .workspace-main .empty h3{font-family:"Space Grotesk";font-size:22px;line-height:1.3;letter-spacing:-.6px}
 .workspace-main .empty p{font-size:14px;line-height:1.8}

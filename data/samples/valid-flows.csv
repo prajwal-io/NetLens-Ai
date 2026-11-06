@@ -1,4 +1,4 @@
-Destination Port,Flow Duration,Total Fwd Packets,Total Backward Packets
-443,125000,12,9
-53,4200,2,2
-80,87000,8,6
+throughput,congestion,packet_loss,latency,jitter,Percentage video occupancy,Bitrate video,Number videos
+2.15,0.38,0,6.58,0.52,0,0,0
+1.42,10.74,0,7.55,0.65,10,167,1
+1.12,40.89,7.5,10.29,0.94,50,835,2

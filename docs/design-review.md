@@ -1,4 +1,4 @@
-ROUND 3 / Frontend completion
+﻿ROUND 3 / Frontend completion
 Seen in one second: the same NetSight editorial workspace, now with explicit controls for motion, data preparation and investigation.
 Idea: complete the existing workflow without implying unavailable ML capabilities.
 Live thing: repeating edge signals, cancellable real uploads, session receipts and JSON downloads, URL filters, mobile flow details, network zoom/reset and backend freshness.

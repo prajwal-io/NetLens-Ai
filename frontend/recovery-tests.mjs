@@ -1,4 +1,4 @@
-import {chromium} from '@playwright/test';
+﻿import {chromium} from '@playwright/test';
 import assert from 'node:assert/strict';
 const base=process.env.AUDIT_URL||'http://127.0.0.1:4175';
 const browser=await chromium.launch({executablePath:process.env.BROWSER_EXECUTABLE||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
@@ -12,6 +12,7 @@ try{
  assert.equal(await page.locator('.topology-background').getAttribute('data-running'),'false');
  await page.getByRole('button',{name:'Resume background animation',exact:true}).click();
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'))});
+ await page.waitForFunction(()=>document.querySelector('.topology-background')?.getAttribute('data-running')==='false');
  assert.equal(await page.locator('.topology-background').getAttribute('data-running'),'false');
  await storageContext.close();
 

@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test';
+﻿import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 const base=process.env.AUDIT_URL||'http://127.0.0.1:5173';
 const browser = await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
@@ -14,7 +14,7 @@ for(const name of ['Network Pulse','Traffic Analyzer','Threat Investigation','Mo
 await page.goto(base+'/traffic-analyzer');
 await page.getByLabel('Traffic CSV file').setInputFiles('../data/samples/valid-flows.csv');
 await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
-await page.getByText('3 flows validated').waitFor();
+await page.getByText('3 rows validated').waitFor();
 await page.getByLabel('Traffic CSV file').setInputFiles({name:'invalid.csv',mimeType:'text/csv',buffer:Buffer.from('bad\n1')});
 await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
 await page.getByRole('alert').filter({hasText:'Missing required columns'}).waitFor();
@@ -96,3 +96,4 @@ assert.equal(await page.evaluate(()=>document.activeElement?.id),'main-content')
 assert.deepEqual(errors,[]);
 await browser.close();
 console.log('PASS: landing story, interactive SVG, keyboard process tabs, pause control, reduced motion, six routes, upload success and error, backend outage and retry, mobile navigation, responsive overflow, no browser errors.');
+

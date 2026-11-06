@@ -1,10 +1,10 @@
-import {chromium} from '@playwright/test';
+﻿import {chromium} from '@playwright/test';
 const b=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
 const p=await b.newPage({viewport:{width:1440,height:1100},reducedMotion:'reduce'});
 await p.goto('http://127.0.0.1:4176/traffic-analyzer');
 await p.getByLabel('Traffic CSV file').setInputFiles('../data/samples/valid-flows.csv');
 await p.getByRole('button',{name:'Validate CSV',exact:true}).click();
-await p.getByText('3 flows validated',{exact:true}).waitFor();
+await p.getByText('3 rows validated',{exact:true}).waitFor();
 await p.screenshot({path:'../docs/completion-upload.png'});
 await p.goto('http://127.0.0.1:4176/reports');
 await p.getByRole('button',{name:'Download validation receipt',exact:true}).waitFor();
@@ -19,3 +19,4 @@ await p.getByRole('heading',{name:'FL-0281',exact:true}).waitFor();
 await p.screenshot({path:'../docs/completion-mobile-detail.png',fullPage:true});
 await b.close();
 console.log('Saved final preview screenshots.');
+

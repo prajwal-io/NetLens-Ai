@@ -1,4 +1,4 @@
-/* Completion controls share the existing paper, ink, signal-blue, and motion tokens. */
+﻿/* Completion controls share the existing paper, ink, signal-blue, and motion tokens. */
 .header-actions{display:flex;align-items:center;gap:16px}
 .background-motion-control{display:grid;place-items:center;min-width:44px;min-height:44px;border:1px solid #dfe5ed;background:#ffffffb3;border-radius:50%;color:#52657d;padding:8px}
 .background-motion-control:disabled{opacity:.65}

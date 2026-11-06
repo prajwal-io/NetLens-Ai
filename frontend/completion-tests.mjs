@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test';
+﻿import { chromium } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,6 +9,7 @@ const page=await context.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
  await page.goto(base+'/command-center');await page.getByText('Backend connected',{exact:true}).waitFor();
+ await page.getByText('Loaded / netsight-rf-v1',{exact:true}).waitFor();
  // Repeating background: real CSS cycle, pause persistence, reduced motion.
  assert.equal(await page.locator('.edge-signal').first().evaluate(e=>getComputedStyle(e).animationIterationCount),'infinite');
  await page.getByRole('button',{name:'Pause background animation',exact:true}).click();
@@ -36,20 +37,54 @@ try{
  await page.getByRole('button',{name:'Remove selected file'}).click();
  await page.getByLabel('Traffic CSV file').setInputFiles('../data/samples/valid-flows.csv');
  await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
- await page.getByText('3 flows validated',{exact:true}).waitFor();
+ await page.getByText('3 rows validated',{exact:true}).waitFor();
+ await page.getByRole('heading',{name:'Validation checks',exact:true}).waitFor();
+ await page.getByText('3 rows passed structure and numeric-value checks.',{exact:true}).waitFor();
+ // Run actual backend inference and inspect a CSV exported from those predictions.
+ await page.getByRole('button',{name:'Analyze traffic',exact:true}).click();
+ await page.getByRole('heading',{name:'Model analysis',exact:true}).waitFor();
+ await page.getByText('Actual model output / netsight-rf-v1',{exact:true}).waitFor();
+ const [predictionDownload]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Export predictions CSV',exact:true}).click()]);
+ const predictionCsv=fs.readFileSync(await predictionDownload.path(),'utf8');
+ assert(predictionCsv.startsWith('row_id,label,anomaly_score,decision_threshold,model_version,source_file'));
+ assert.equal(predictionCsv.trim().split(/\r?\n/).length,4);
  await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
- await page.getByText('3 flows validated',{exact:true}).waitFor();
+ await page.getByText('3 rows validated',{exact:true}).waitFor();
  await page.route('**/traffic/validate',async route=>{await new Promise(r=>setTimeout(r,800));try{await route.continue()}catch{}});
  await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
  await page.getByRole('button',{name:'Cancel validation',exact:true}).click();
  await page.getByText('Validation cancelled.',{exact:false}).waitFor();
  await page.unrouteAll({behavior:'wait'});
+ // The dashboard switches to this actual validation receipt without implying inference.
+ await page.goto(base+'/command-center');
+ await page.getByRole('button',{name:/Latest validation/}).click();
+ await page.getByText('Validation only.',{exact:false}).waitFor();
+ await page.getByText('Normal classifications',{exact:true}).waitFor();
+ assert.equal(await page.getByText('Unavailable',{exact:true}).count(),2);
+ await page.getByText('No classification timeline yet',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('heading',{name:'Recent sample flows',exact:true}).count(),0);
+ await page.getByRole('button',{name:/Sample overview/}).click();
+ await page.getByText('Sample UI data.',{exact:false}).waitFor();
+ // The local network walkthrough is explicitly illustrative and has working controls.
+ await page.goto(base+'/network-pulse');
+ await page.getByText('not a historical replay',{exact:false}).waitFor();
+ await page.getByRole('button',{name:'Play walkthrough',exact:true}).click();
+ await page.getByRole('button',{name:'Pause walkthrough',exact:true}).waitFor();
+ await page.getByRole('button',{name:/02 Name lookup/}).click();
+ await page.getByRole('heading',{name:'Name lookup',exact:true}).waitFor();
+ assert.equal(await page.locator('#walkthrough-position').inputValue(),'12');
+ await page.getByRole('button',{name:'Restart',exact:true}).click();
+ assert.equal(await page.locator('#walkthrough-position').inputValue(),'0');
  // Download and inspect the receipt generated from actual server validation.
  await page.goto(base+'/reports');
  await page.getByRole('button',{name:'Download validation receipt',exact:true}).waitFor();
  const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Download validation receipt',exact:true}).click()]);
  const receipt=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
  assert.equal(receipt.kind,'csv-validation');assert.equal(receipt.rows,3);assert(!('predictions' in receipt));assert(!('preview' in receipt));
+ await page.goto(base+'/model-lab');
+ await page.getByRole('heading',{name:'Held-out evaluation',exact:true}).waitFor();
+ await page.getByText('21.4%',{exact:true}).waitFor();
+ await page.getByText('Experimental result:',{exact:false}).waitFor();
  // Browser back/forward, sharable investigation state, filtering, sorting and focused mobile details.
  await page.goto(base+'/threat-investigation');
  await page.getByLabel('Classification',{exact:true}).selectOption('Normal');
@@ -84,5 +119,5 @@ try{
  await page.emulateMedia({reducedMotion:'reduce'});
  assert.equal(await page.locator('.edge-signal').first().evaluate(e=>getComputedStyle(e).animationName),'none');
  assert.deepEqual(errors,[]);
- console.log('PASS: looping background, pause persistence, saved controls, zoom/reset, upload prechecks/remove/cancel, real receipts/download, URL filters/back/forward/mobile detail, offline recovery, 320px/landscape/zoom reflow, 404, menu accessibility, reduced motion.');
+ console.log('PASS: background controls, saved dashboard/network preferences, zoom/reset, CSV checks and cancellation, dashboard source switching without fake predictions, guided replay controls, receipt export, filters/history/mobile detail, offline recovery, responsive route overflow, 404, accessibility, and reduced motion.');
 }finally{await browser.close()}

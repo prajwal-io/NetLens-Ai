@@ -1,4 +1,4 @@
-const base=process.env.AUDIT_URL||'http://127.0.0.1:4175';
+﻿const base=process.env.AUDIT_URL||'http://127.0.0.1:4175';
 for(const path of ['/','/command-center','/threat-investigation?q=443&label=All&sort=port','/unknown-route']){
  const response=await fetch(base+path);
  if(response.status!==200)throw new Error('SPA route failed: '+path);

@@ -1,4 +1,4 @@
-import {chromium} from '@playwright/test';
+﻿import {chromium} from '@playwright/test';
 const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
 const page=await browser.newPage({viewport:{width:1440,height:1100},reducedMotion:'reduce'});
 await page.goto('http://127.0.0.1:4174/command-center');

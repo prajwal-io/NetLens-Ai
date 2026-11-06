@@ -1,4 +1,4 @@
-# Editorial redesign
+﻿# Editorial redesign
 
 ## Product continuity
 The landing page lives at / and Command Center at /command-center. All five other tool URLs remain unchanged. The brand link returns to the story; the header action connects the story and workspace. Six workspace destinations sit in a compact sticky horizontal navigation surface. Narrow screens keep the navigation horizontally scrollable, with native keyboard-accessible links.

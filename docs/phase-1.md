@@ -1,42 +1,53 @@
-# Running the Phase 1 foundation
+# Local development
 
-Use two terminals from the repository root.
+NetSight AI runs as two local development services: the Vite frontend and the FastAPI backend.
 
-## Frontend
-~~~powershell
-cd frontend
-npm.cmd install
-npm.cmd run dev
-~~~
-Open http://127.0.0.1:5173. The API base defaults to http://127.0.0.1:8000/api/v1. Copy .env.example to .env to override it. Fonts are bundled locally.
+## Requirements
+
+- Node.js and npm
+- Python 3.11 or 3.12
 
 ## Backend
-With Python 3.11 or 3.12 installed:
-~~~powershell
+
+From the repository root, open a terminal and run:
+
+```powershell
 cd backend
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-~~~
-The current workspace already has backend/.venv installed and can run the last command directly. API docs: http://127.0.0.1:8000/docs.
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
 
-Optional configuration is in backend/.env.example. NETSIGHT_CORS_ORIGINS accepts a JSON array. SQLite is initialized at backend/data/netsight.db by default. CSV uploads are not saved.
+The checked-in application can start without the raw Kaggle dataset. To rebuild the local model artifact, download and evaluate the selected dataset:
 
-## Verify
-~~~powershell
-cd backend
-.\.venv\Scripts\python.exe -m pytest -q --basetemp=.pytest-tmp
-~~~
-~~~powershell
+```powershell
+python -m ml.download_dataset
+python -m ml.train
+python -m ml.evaluate
+```
+
+Then start the API:
+
+```powershell
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+The API is available at `http://127.0.0.1:8000`; health is at `/api/v1/health`, and interactive API docs are at `/docs`.
+
+## Frontend
+
+In a second terminal from the repository root:
+
+```powershell
 cd frontend
-npm.cmd run build
-node smoke.mjs
-~~~
-The browser smoke test requires Chrome at the Windows executable path specified in smoke.mjs, and both servers running. It covers navigation, actual upload success/error, API outage/retry, phone navigation, overflow, and browser errors.
+npm install
+npm run dev
+```
 
-Upload data/samples/valid-flows.csv through Traffic Analyzer, or download the same sample from the interface. Expected: 3 validated flows and a five-row-limited preview; no predictions. Test offline recovery by stopping the backend and refreshing its status.
+Open the local Vite URL shown in the terminal (normally `http://127.0.0.1:5173`). Vite forwards `/api` requests to the FastAPI service on port 8000. The frontend displays backend and model availability from the real health endpoint.
 
-This phase includes six routes, the dashboard, schema validation, and infrastructure. Replay, inference, trained-model evaluation, analysis history, and report exports remain in later phases. All dashboard activity and flow labels are explicitly sample UI data.
+## Verify upload and inference
 
-## Editorial interface update
-The landing story is now at /. Command Center is at /command-center. The six workspace destinations use a floating horizontal navigation bar. See editorial-redesign.md for interaction and verification details. Backend commands and CSV contracts are unchanged.
+Open **Traffic Analyzer**, choose `data/samples/valid-flows.csv`, validate it, then run analysis. Validation checks the CSV structure; analysis sends the rows to the evaluated local model and returns its actual output. If the model artifact is unavailable, analysis returns an error rather than fabricated predictions.
+
+The selected Kaggle label describes network performance anomalies, not verified malicious traffic. Review [the model evaluation record](model-evaluation.md) before interpreting predictions.

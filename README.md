@@ -377,22 +377,18 @@ The complete faculty demonstration should work without depending on internet con
 
 ### Dataset
 
-Recommended dataset:
+The initial implementation uses the Kaggle [Network Anomaly Dataset](https://www.kaggle.com/datasets/kaiser14/network-anomaly-dataset), downloaded with KaggleHub. Its labeled file contains a small, one-day network telemetry sample and a binary `anomaly` label.
 
-CIC-IDS2017
-
-https://www.unb.ca/cic/datasets/ids-2017.html
-
-This dataset provides labeled network traffic suitable for intrusion detection research.
-
-The original academic PPT does not mandate this specific dataset. It is selected as a practical implementation recommendation.
+**Important scope correction:** this dataset labels network performance anomalies. It is not a malicious-traffic or intrusion dataset. The trained model and UI must use the terms *normal* and *anomalous* and must not present these predictions as attack detections. CIC-IDS2017 remains a possible later source for an intrusion-detection model, subject to schema mapping and separate evaluation.
 
 ### Initial ML Goal
 
-Binary classification:
+Binary classification for the selected dataset:
 
-- Normal Traffic
-- Malicious Traffic
+- Normal network performance
+- Anomalous network performance
+
+The target column is `anomaly`; timestamp, categorical route fields, and all auxiliary `anomaly_*` label columns are excluded from model features.
 
 Multiclass attack classification may be introduced later if the model produces satisfactory evaluation results.
 
@@ -459,9 +455,7 @@ Classification Results
 - F1-score
 - Confusion matrix
 
-Accuracy alone is insufficient for an imbalanced intrusion dataset.
-
-Precision and recall for malicious traffic must also be evaluated.
+Accuracy alone is insufficient for an imbalanced anomaly dataset. Report precision, recall, F1, the confusion matrix, and class support from held-out records.
 
 ### Model Limitations
 
@@ -530,28 +524,28 @@ The following JSON demonstrates the planned response structure. Its values are i
 {
   "analysis_id": "sample-001",
   "source_type": "uploaded_csv",
-  "model_version": "rf-v1",
+  "model_version": "netsight-rf-v1",
   "total_flows": 2,
   "counts": {
     "normal": 1,
-    "malicious": 1
+    "anomalous": 1
   },
   "predictions": [
     {
       "row_id": 1,
       "label": "normal",
-      "model_score": 0.12
+      "anomaly_score": 0.12
     },
     {
       "row_id": 2,
-      "label": "malicious",
-      "model_score": 0.88
+      "label": "anomalous",
+      "anomaly_score": 0.88
     }
   ]
 }
 ```
 
-The meaning of `model_score` must be defined consistently during implementation.
+`anomaly_score` is the pipeline's estimated probability for class `1` from `predict_proba`. It is not calibrated and is not proof of an incident. The API also returns a preview with model features and results for up to five rows.
 
 ### API Requirements
 
@@ -565,7 +559,7 @@ The meaning of `model_score` must be defined consistently during implementation.
 - Proper model-loading errors.
 - No fabricated predictions.
 
-If the model has not been trained or cannot load, prediction requests should return an appropriate error such as HTTP 503.
+If the model has not been trained, evaluated, or cannot load, prediction requests should return an appropriate error such as HTTP 503.
 
 ---
 
@@ -1101,9 +1095,15 @@ Prioritize correct ML functionality, clean architecture, reliable integration, a
 
 **Project Vision: Make network traffic analysis understandable, interactive, and verifiable.**
 
-## Phase 1 implementation
+## Phase 2 implementation
 
-The frontend and API foundation are implemented. See [Phase 1 local run instructions](docs/phase-1.md) and [architecture and CSV contract](docs/architecture.md). Later-phase capabilities remain explicitly unavailable.
+The React frontend, FastAPI foundation, KaggleHub downloader, chronological training/evaluation pipeline, local model artifact, `/traffic/analyze`, and `/model/info` are implemented. Traffic Analyzer validates uploads and can run actual model inference when the evaluated artifact is installed. The results describe network performance anomalies, not malicious activity.
+
+See [local development setup](docs/phase-1.md), [architecture and API contracts](docs/architecture.md), and the [model evaluation record](docs/model-evaluation.md).
+
+To download and retrain the model, from `backend/` run `python -m ml.download_dataset`, `python -m ml.train`, and `python -m ml.evaluate`. The raw Kaggle files stay in the ignored `data/kagglehub-cache/` directory. The local trained artifact is `backend/ml/artifacts/netsight-model.joblib`.
+
+Analysis history, stored reports, and replay APIs remain future work. The current Network Pulse walkthrough is conceptual and local; it is not historical replay or live capture.
 
 
 ## Frontend quality update

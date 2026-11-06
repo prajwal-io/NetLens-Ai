@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test';
+﻿import { chromium } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import fs from 'node:fs';
 const base=process.env.AUDIT_URL||'http://127.0.0.1:5173';
@@ -19,3 +19,4 @@ for(const width of [1440,390]){
 fs.writeFileSync('../docs/accessibility-audit.json',JSON.stringify(results,null,2));
 await browser.close();
 if(results.some(r=>r.violations.length))process.exitCode=1;
+

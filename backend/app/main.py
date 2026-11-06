@@ -8,10 +8,12 @@ from starlette.exceptions import HTTPException
 from app.api.routes import router
 from app.core.config import settings
 from app.db.database import initialize
+from app.services.model_service import model_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     initialize()
+    model_service.load()
     yield
 
 app = FastAPI(title="NetSight AI", version="0.1.0", lifespan=lifespan)

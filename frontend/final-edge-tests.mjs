@@ -1,4 +1,4 @@
-import {chromium} from '@playwright/test';
+﻿import {chromium} from '@playwright/test';
 import assert from 'node:assert/strict';
 const base=process.env.AUDIT_URL||'http://127.0.0.1:4176';
 const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
@@ -13,7 +13,7 @@ try{
  await page.goto(base+'/traffic-analyzer');
  await page.getByLabel('Traffic CSV file').setInputFiles('../data/samples/valid-flows.csv');
  await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
- await page.getByText('3 flows validated',{exact:true}).waitFor();
+ await page.getByText('3 rows validated',{exact:true}).waitFor();
  await page.goto(base+'/reports');
  await page.getByLabel('Find a validated file').fill('no-matching-file');
  await page.getByRole('heading',{name:'No matching receipt',exact:true}).waitFor();
@@ -26,7 +26,7 @@ try{
  await page.getByLabel('Traffic CSV file').setInputFiles('../data/samples/valid-flows.csv');
  await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
  await page.getByRole('alert').filter({hasText:'The validation response was incomplete'}).waitFor();
- assert.equal(await page.getByText('3 flows validated',{exact:true}).count(),0);
+ assert.equal(await page.getByText('3 rows validated',{exact:true}).count(),0);
  await page.route('**/api/v1/health',r=>r.fulfill({json:null}));
  await page.getByRole('button',{name:'Refresh backend status'}).click();
  await page.getByText('The backend returned an invalid health response.',{exact:false}).waitFor();
@@ -36,3 +36,4 @@ try{
  assert.deepEqual(errors,[]);
  console.log('PASS: invalid flow links, persistent report search, filtered empty states, malformed validation and health responses, and retry recovery.');
 }finally{await browser.close()}
+

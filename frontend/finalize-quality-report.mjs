@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 const file='../docs/frontend-quality.md';
 let text=fs.readFileSync(file,'utf8');
 text=text.replace('| Landing | 95 |','| Landing | 97 |').replace('| Command Center | 91 |','| Command Center | 97 |')
