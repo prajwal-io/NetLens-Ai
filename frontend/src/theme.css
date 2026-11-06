@@ -72,14 +72,14 @@ select:focus-visible,
 }
 
 .topology-edge {
-  opacity: .9;
+  opacity: .96;
 }
 
 .topology-background .edge-signal {
-  stroke-dasharray: 9 91;
+  stroke-dasharray: 14 86;
   stroke-dashoffset: 100;
   opacity: 0;
-  animation: edge-signal-travel 25s linear infinite;
+  animation: edge-signal-travel 22s linear infinite;
 }
 
 .topology-background .edge-signal-delayed {
@@ -88,8 +88,8 @@ select:focus-visible,
 
 @keyframes edge-signal-travel {
   0% { stroke-dashoffset: 100; opacity: 0; }
-  12% { opacity: .72; }
-  80% { opacity: .45; }
+  12% { opacity: .82; }
+  80% { opacity: .58; }
   100% { stroke-dashoffset: -100; opacity: 0; }
 }
 
@@ -105,10 +105,10 @@ select:focus-visible,
   position: absolute;
   top: 0;
   display: grid;
-  gap: 12px;
-  width: 28px;
+  gap: 11px;
+  width: 30px;
   color: var(--signal-blue);
-  font: 500 9px/1.1 "SFMono-Regular", Consolas, monospace;
+  font: 500 10px/1.1 "SFMono-Regular", Consolas, monospace;
   letter-spacing: .08em;
   text-align: center;
   text-shadow: none;
@@ -122,17 +122,17 @@ select:focus-visible,
 }
 
 .rain-column span:nth-child(3n) {
-  opacity: .45;
+  opacity: .55;
 }
 
 .rain-column span:nth-child(4n) {
-  opacity: .68;
+  opacity: .78;
 }
 
 @keyframes telemetry-fall {
   0% { transform: translate3d(0, -112vh, 0); opacity: 0; }
-  12% { opacity: .22; }
-  78% { opacity: .18; }
+  12% { opacity: .32; }
+  78% { opacity: .25; }
   100% { transform: translate3d(0, 108vh, 0); opacity: 0; }
 }
 
@@ -639,8 +639,12 @@ td {
   }
 
   .rain-column {
-    font-size: 8px;
+    font-size: 9px;
     gap: 10px;
+  }
+
+  .topology-edge {
+    opacity: .72;
   }
 
   .mobile-navigation {
@@ -682,4 +686,59 @@ td {
 .field-label,
 .flow-motion-toggle {
   color: #c1cddd;
+}
+
+/* Use the supplied wordmark with its extracted transparent background. */
+.product-header .brand,
+.landing-footer .brand {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.product-header .brand-logo,
+.landing-footer .brand-logo,
+.closing-logo {
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  mix-blend-mode: normal;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.product-header .brand-logo {
+  width: 176px;
+  height: 49px;
+}
+
+.landing-footer .brand-logo {
+  width: 132px;
+  height: 37px;
+}
+
+.closing-logo {
+  width: 210px;
+  height: 58px;
+}
+
+@media (max-width: 760px) {
+  .product-header .brand-logo {
+    width: 150px;
+    height: 42px;
+  }
+
+  .landing-footer .brand-logo {
+    width: 114px;
+    height: 32px;
+  }
+
+  .closing-logo {
+    width: 190px;
+    height: 53px;
+  }
 }
