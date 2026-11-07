@@ -3,7 +3,7 @@ import pandas as pd
 from uuid import uuid4
 
 from app.core.config import settings
-from app.schemas.traffic import AnalysisResponse, HealthResponse, ValidationResponse
+from app.schemas.traffic import AnalysisResponse, FeatureSchemaResponse, HealthResponse, ValidationResponse
 from app.services.model_service import model_service
 from app.services.validation import parse_traffic_csv, validate_csv
 from ml.schema import FEATURE_COLUMNS
@@ -17,6 +17,10 @@ def health():
 @router.get("/model/info")
 def model_info():
     return model_service.info()
+
+@router.get("/model/schema", response_model=FeatureSchemaResponse)
+def model_schema():
+    return model_service.schema()
 
 async def read_csv_upload(file: UploadFile) -> bytes:
     if not file.filename or not file.filename.lower().endswith(".csv"):
@@ -42,12 +46,12 @@ async def analyze(file: UploadFile = File(...)):
         features = pd.DataFrame.from_records(rows, columns=FEATURE_COLUMNS)
         labels, scores, metadata, threshold = model_service.predict(features)
         normal = int((labels == 0).sum())
-        anomalous = int((labels == 1).sum())
+        malicious = int((labels == 1).sum())
         predictions = [
             {
                 "row_id": index + 1,
-                "label": "anomalous" if int(label) == 1 else "normal",
-                "anomaly_score": float(score),
+                "label": "malicious" if int(label) == 1 else "normal",
+                "malicious_score": float(score),
             }
             for index, (label, score) in enumerate(zip(labels, scores))
         ]
@@ -64,11 +68,11 @@ async def analyze(file: UploadFile = File(...)):
             model_version=str(metadata["model_version"]),
             threshold=threshold,
             total_flows=validation.row_count,
-            counts={"normal": normal, "anomalous": anomalous},
+            counts={"normal": normal, "malicious": malicious},
             predictions=predictions,
             preview=preview,
             score_definition=str(metadata["score_definition"]),
-            message="Model output represents this dataset's network performance anomaly labels, not verified malicious activity.",
+            message="The model classifies compatible flow features against the UNSW-NB15 benchmark label. A malicious label is a review signal, not proof of an incident.",
         )
     finally:
         await file.close()

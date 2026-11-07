@@ -14,8 +14,6 @@ httpx==0.28.1
 idna==3.20
 iniconfig==2.3.1
 joblib==1.6.0
-kagglehub==1.0.3
-kagglesdk==0.1.38
 narwhals==2.28.0
 numpy==2.5.4
 opentelemetry-api==1.45.2

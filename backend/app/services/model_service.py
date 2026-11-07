@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from app.core.config import settings
-from ml.schema import FEATURE_COLUMNS
+from ml.schema import CATEGORICAL_FEATURES, FEATURE_COLUMNS, ID_COLUMN, LABEL_CONTEXT_COLUMN, NUMERIC_FEATURES, SCHEMA_NAME, TARGET_COLUMN
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +54,10 @@ class ModelService:
                 return False
             try:
                 artifact = joblib.load(self.artifact_path)
-                if not isinstance(artifact, dict) or artifact.get("format_version") != 1:
+                if not isinstance(artifact, dict) or artifact.get("format_version") != 2:
                     raise ValueError("Unsupported model artifact format.")
                 if tuple(artifact.get("features", ())) != FEATURE_COLUMNS:
-                    raise ValueError("Model artifact feature order does not match network-metrics-v1.")
+                    raise ValueError("Model artifact feature order does not match UNSW-NB15 flow schema v1.")
                 metadata = artifact.get("metadata")
                 pipeline = artifact.get("pipeline")
                 threshold = artifact.get("threshold")
@@ -96,6 +96,18 @@ class ModelService:
         # JSON round-tripping gives callers a detached, serialization-safe copy.
         return json.loads(json.dumps(metadata, allow_nan=False))
 
+    @staticmethod
+    def schema() -> dict[str, Any]:
+        """Expose the accepted input contract even when no model is installed."""
+        return {
+            "schema_name": SCHEMA_NAME,
+            "feature_count": len(FEATURE_COLUMNS),
+            "features": list(FEATURE_COLUMNS),
+            "numeric_features": list(NUMERIC_FEATURES),
+            "categorical_features": list(CATEGORICAL_FEATURES),
+            "excluded_columns": [ID_COLUMN, LABEL_CONTEXT_COLUMN, TARGET_COLUMN],
+        }
+
     def predict(self, features: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, dict[str, Any], float]:
         pipeline, metadata, threshold = self.require_loaded()
         ordered = features.loc[:, FEATURE_COLUMNS]
@@ -104,7 +116,7 @@ class ModelService:
         positive_index = classes.index(1)
         scores = probabilities[:, positive_index]
         if not np.isfinite(scores).all() or ((scores < 0) | (scores > 1)).any():
-            raise RuntimeError("The model returned invalid anomaly scores.")
+            raise RuntimeError("The model returned invalid malicious-class scores.")
         labels = (scores >= threshold).astype("int64")
         return labels, scores, metadata, threshold
 

@@ -377,18 +377,16 @@ The complete faculty demonstration should work without depending on internet con
 
 ### Dataset
 
-The initial implementation uses the Kaggle [Network Anomaly Dataset](https://www.kaggle.com/datasets/kaiser14/network-anomaly-dataset), downloaded with KaggleHub. Its labeled file contains a small, one-day network telemetry sample and a binary `anomaly` label.
-
-**Important scope correction:** this dataset labels network performance anomalies. It is not a malicious-traffic or intrusion dataset. The trained model and UI must use the terms *normal* and *anomalous* and must not present these predictions as attack detections. CIC-IDS2017 remains a possible later source for an intrusion-detection model, subject to schema mapping and separate evaluation.
+The implemented model uses the academically documented [UNSW-NB15 dataset](https://research.unsw.edu.au/projects/unsw-nb15-dataset), a labeled network-flow intrusion-detection benchmark with official training and test partitions. A pinned public mirror is used by the downloader; provenance and file hashes are recorded locally. Academic use requires citing the dataset publications; commercial use requires permission from the dataset authors.
 
 ### Initial ML Goal
 
-Binary classification for the selected dataset:
+Binary classification for the selected benchmark:
 
-- Normal network performance
-- Anomalous network performance
+- Normal traffic (`label=0`)
+- Attack-labeled traffic (`label=1`, shown in the product as **malicious** for investigation)
 
-The target column is `anomaly`; timestamp, categorical route fields, and all auxiliary `anomaly_*` label columns are excluded from model features.
+The input contract has 42 flow features (39 numeric and `proto`, `service`, `state` categorical). Direct record ID (`id`), target (`label`), and attack category (`attack_cat`) are excluded from model input. A malicious prediction is a review signal, not proof of an incident.
 
 Multiclass attack classification may be introduced later if the model produces satisfactory evaluation results.
 
@@ -449,13 +447,14 @@ Classification Results
 
 ### Evaluation Metrics
 
-- Accuracy
+- Accuracy and balanced accuracy
 - Precision
 - Recall
 - F1-score
+- Average precision and ROC-AUC
 - Confusion matrix
 
-Accuracy alone is insufficient for an imbalanced anomaly dataset. Report precision, recall, F1, the confusion matrix, and class support from held-out records.
+Accuracy alone is insufficient for an imbalanced intrusion dataset. The implemented report includes precision, recall, F1, threshold-independent metrics, confusion matrix, and class support from held-out records. See [`docs/model-evaluation.md`](docs/model-evaluation.md) for actual measured results and limitations.
 
 ### Model Limitations
 
@@ -485,6 +484,7 @@ Base URL:
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | /health | Backend and model status |
+| GET | /model/schema | Supported CSV feature contract |
 | POST | /traffic/validate | Validate CSV input |
 
 ### Phase 2 API
@@ -524,28 +524,28 @@ The following JSON demonstrates the planned response structure. Its values are i
 {
   "analysis_id": "sample-001",
   "source_type": "uploaded_csv",
-  "model_version": "netsight-rf-v1",
+  "model_version": "netsight-rf-unsw-v1",
   "total_flows": 2,
   "counts": {
     "normal": 1,
-    "anomalous": 1
+    "malicious": 1
   },
   "predictions": [
     {
       "row_id": 1,
       "label": "normal",
-      "anomaly_score": 0.12
+      "malicious_score": 0.12
     },
     {
       "row_id": 2,
-      "label": "anomalous",
-      "anomaly_score": 0.88
+      "label": "malicious",
+      "malicious_score": 0.88
     }
   ]
 }
 ```
 
-`anomaly_score` is the pipeline's estimated probability for class `1` from `predict_proba`. It is not calibrated and is not proof of an incident. The API also returns a preview with model features and results for up to five rows.
+`malicious_score` is the pipeline's uncalibrated `predict_proba` value for benchmark class `1`. It is not attack confidence or proof of an incident. The API also returns a preview with model features and results for up to five rows. Example values above are illustrative and are not predictions.
 
 ### API Requirements
 
@@ -1097,11 +1097,11 @@ Prioritize correct ML functionality, clean architecture, reliable integration, a
 
 ## Phase 2 implementation
 
-The React frontend, FastAPI foundation, KaggleHub downloader, chronological training/evaluation pipeline, local model artifact, `/traffic/analyze`, and `/model/info` are implemented. Traffic Analyzer validates uploads and can run actual model inference when the evaluated artifact is installed. The results describe network performance anomalies, not malicious activity.
+The React frontend and FastAPI foundation are connected to an UNSW-NB15 binary flow-classification pipeline. The pinned downloader, input validation, preprocessing, candidate comparison, grouped validation, threshold selection, held-out evaluation, `/traffic/analyze`, `/model/schema`, and `/model/info` are implemented. The API returns actual inference only when a trained and evaluated local artifact is installed; it does not fabricate predictions.
 
 See [local development setup](docs/phase-1.md), [architecture and API contracts](docs/architecture.md), and the [model evaluation record](docs/model-evaluation.md).
 
-To download and retrain the model, from `backend/` run `python -m ml.download_dataset`, `python -m ml.train`, and `python -m ml.evaluate`. The raw Kaggle files stay in the ignored `data/kagglehub-cache/` directory. The local trained artifact is `backend/ml/artifacts/netsight-model.joblib`.
+To download and retrain the model, from `backend/` run `python -m ml.download_dataset`, `python -m ml.train`, and `python -m ml.evaluate`. The normalized raw CSVs stay under the ignored `data/raw/unsw-nb15/` directory. The trained artifact and metadata are generated under `backend/ml/artifacts/` and are not committed.
 
 Analysis history, stored reports, and replay APIs remain future work. The current Network Pulse walkthrough is conceptual and local; it is not historical replay or live capture.
 

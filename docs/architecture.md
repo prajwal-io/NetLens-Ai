@@ -1,61 +1,64 @@
 # NetSight AI architecture
 
-The frontend is a React and TypeScript application. Its centralized API client calls the FastAPI service through Vite's same-origin `/api` proxy during local development. The backend separates routes, request schemas, CSV validation, model loading/inference, settings, and SQLite initialization.
+React and TypeScript call the FastAPI service through Vite's same-origin `/api` proxy during local development. FastAPI separates routing, response schemas, CSV validation, model loading/inference, configuration, and SQLite initialization. Model training and evaluation run as explicit commands outside the request path.
 
 ```text
-CSV upload
-   |
-   v
-FastAPI size + CSV checks ----> /traffic/validate
-   |
-   +--> select 8 numeric network measurements
-   |
-   v
-Loaded sklearn pipeline -----> /traffic/analyze
-   |
-   +--> labels + anomaly scores + counts + 5-row preview
-   |
-   +--> React Traffic Analyzer and CSV predictions export
+UNSW-NB15 train/test CSVs
+        |
+        v
+Pinned dataset downloader + row/hash checks
+        |
+        v
+Grouped validation / model selection
+        |
+        v
+Fitted preprocessing + classifier artifact
+        |
+        +-----------------------------+
+                                      |
+User CSV --> React API client --> FastAPI validation
+                                      |
+                                      v
+                             Evaluated model inference
+                                      |
+                                      v
+                         Normal / malicious + score
+                                      |
+                    +-----------------+----------------+
+                    v                                  v
+              Dashboard / UI                   Prediction CSV export
 ```
 
-## Backend endpoints
+## API endpoints
 
 Base URL: `http://127.0.0.1:8000/api/v1`
 
 | Method | Endpoint | Behavior |
 |---|---|---|
-| GET | `/health` | FastAPI status and whether the evaluated local artifact loaded |
-| POST | `/traffic/validate` | Check the model input schema and return a text preview; does not predict |
-| POST | `/traffic/analyze` | Run the saved pipeline and return one prediction per input row |
-| GET | `/model/info` | Return actual dataset, feature, split, and held-out metric metadata |
+| GET | `/health` | Backend status and whether the evaluated model loaded |
+| GET | `/model/schema` | Static CSV feature contract, available even without a model |
+| GET | `/model/info` | Dataset, features, preprocessing, splits, and real evaluation metrics |
+| POST | `/traffic/validate` | Validate required CSV columns, rows, values, and return a text preview; no predictions |
+| POST | `/traffic/analyze` | Run the saved evaluated model; return `normal`/`malicious` labels and `malicious_score` values |
 
-Missing or invalid model artifacts do not prevent the health route from starting. `/traffic/analyze` and `/model/info` return HTTP 503 until a successfully evaluated artifact is installed. API errors use `{ "error": { "code": ..., "message": ... } }`.
+Missing or invalid model artifacts do not prevent the health or schema routes from starting. `/traffic/analyze` and `/model/info` return HTTP 503 until a trained, evaluated artifact is installed. Errors use `{ "error": { "code": ..., "message": ... } }`.
 
-## CSV contract: `network-metrics-v1`
+## CSV contract: `unsw-nb15-flow-v1`
 
-Required finite, nonnegative numeric columns:
+The API requires the 42 model features defined in [`backend/ml/schema.py`](../backend/ml/schema.py): 39 numeric flow features and the categorical fields `proto`, `service`, and `state`. The backend publishes these lists through `/model/schema` and `/model/info` so the frontend does not maintain a second feature list.
 
-- `throughput`
-- `congestion`
-- `packet_loss`
-- `latency`
-- `jitter`
-- `Percentage video occupancy`
-- `Bitrate video`
-- `Number videos`
+Upload requirements: UTF-8 CSV (optional BOM), unique headers, maximum 5 MiB and 50,000 rows. Numeric values must be finite or blank; categorical values may be blank or at most 128 characters. Blank values are imputed by the saved training-fitted preprocessing. Extra columns are shown in the validation preview but excluded from inference. In particular, `id`, `attack_cat`, and `label` never enter the classifier.
 
-UTF-8 CSV with optional BOM, unique headers, up to 5 MiB and 50,000 rows. Extra columns are allowed and visible in validation preview but are never passed to the classifier. This prevents the dataset's target `anomaly` or helper `anomaly_*` labels from leaking into predictions.
+An analysis response includes a generated ID, uploaded filename, model version, threshold, total/class counts, one row ID/label/score per input row, and feature values for up to five preview rows. The prediction CSV includes labels and scores for all rows without copying raw input features. Uploaded analyses are not persisted.
 
-The `/traffic/analyze` response includes a generated ID, source file, model version, threshold, total and class counts, one `row_id`/label/score per row, and feature values for up to five preview rows. The CSV export contains the prediction labels and scores for all rows, not the raw input data.
+## Training, inference, and evaluation
 
-## Training and evaluation
+`backend/ml/download_dataset.py` downloads a pinned UNSW-NB15 mirror revision, normalizes its reversed source filenames using the official 175,341/82,332 row counts, and records SHA-256 hashes. The raw dataset remains under ignored `data/raw/unsw-nb15/`.
 
-Dataset acquisition is handled by `backend/ml/download_dataset.py` using KaggleHub. Raw files are cached under `data/kagglehub-cache/`, excluded from Git, and not copied into application code. Training uses `network_dataset_labeled.csv`.
+Training fits numeric imputation, categorical imputation, and one-hot encoding inside each candidate pipeline. A seeded, stratified validation split groups repeated feature signatures. The pipeline compares Random Forest and Logistic Regression, selects the candidate and score threshold using validation F1/recall/precision, then refits on the complete official training split. `ml.evaluate` checks the data hashes and evaluates the held-out official test split once. It additionally reports metrics on test rows whose feature signatures do not appear in training.
 
-The pipeline uses measured telemetry values only. Timestamp is used to order records but is not a model feature. It compares Random Forest and Logistic Regression on the middle chronological validation segment, selects by anomalous-class F1, and selects the score threshold on validation. It fits the selected pipeline on the first 80% and evaluates once on the final 20%.
-
-Current data limitations and measured results are documented in [model-evaluation.md](model-evaluation.md). The target represents network performance anomalies, not malicious behavior. A score is the model's `predict_proba` output for class 1; it is not calibrated and does not prove an incident.
+Actual scores, confusion matrices, overlap counts, and limitations are recorded in [model-evaluation.md](model-evaluation.md). `malicious_score` is an uncalibrated `predict_proba` value for benchmark class 1. It is not attack confidence or proof of an incident.
 
 ## Persistence and boundaries
 
-SQLite initializes a version table, but uploaded rows and inference history are not persisted. Validation receipts remain browser-session metadata. The trained pipeline and its JSON metadata live in `backend/ml/artifacts/`; both are generated by the training/evaluation scripts. Historical replay APIs, long-term analysis history, and PDF report storage are not part of this implementation.
+SQLite initializes application version state. Uploaded rows and inference history are not stored. Browser receipts retain validation metadata only. The evaluated model and its JSON metadata are generated locally by the ML scripts. Historical replay, saved analysis history, and PDF reports are not implemented. Network Pulse remains a conceptual visualization; it is not historical replay or live packet capture.

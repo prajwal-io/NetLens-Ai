@@ -18,7 +18,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-The checked-in application can start without the raw Kaggle dataset. To rebuild the local model artifact, download and evaluate the selected dataset:
+The checked-in application can start without the raw UNSW-NB15 dataset. To build or rebuild the local model artifact, download the pinned dataset splits, train the candidates, and evaluate the selected pipeline:
 
 ```powershell
 python -m ml.download_dataset
@@ -50,4 +50,4 @@ Open the local Vite URL shown in the terminal (normally `http://127.0.0.1:5173`)
 
 Open **Traffic Analyzer**, choose `data/samples/valid-flows.csv`, validate it, then run analysis. Validation checks the CSV structure; analysis sends the rows to the evaluated local model and returns its actual output. If the model artifact is unavailable, analysis returns an error rather than fabricated predictions.
 
-The selected Kaggle label describes network performance anomalies, not verified malicious traffic. Review [the model evaluation record](model-evaluation.md) before interpreting predictions.
+The classifier predicts the binary UNSW-NB15 benchmark label. A malicious result is a signal for review, not proof of an incident. Review [the model evaluation record](model-evaluation.md) for measured test results, overlap caveats, and limitations.

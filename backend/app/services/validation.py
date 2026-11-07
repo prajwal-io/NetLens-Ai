@@ -1,3 +1,7 @@
+"""Strict CSV validation for the mixed UNSW-NB15 inference schema."""
+
+from __future__ import annotations
+
 import csv
 import io
 import math
@@ -6,18 +10,14 @@ from fastapi import HTTPException
 
 from app.core.config import settings
 from app.schemas.traffic import ValidationResponse
-from ml.schema import FEATURE_COLUMNS
+from ml.schema import CATEGORICAL_FEATURES, FEATURE_COLUMNS, NUMERIC_FEATURES, SCHEMA_NAME
 
 
 REQUIRED_COLUMNS = FEATURE_COLUMNS
 
 
-def parse_traffic_csv(content: bytes, filename: str) -> tuple[ValidationResponse, list[dict[str, float]]]:
-    """Validate the model input contract and return numeric feature rows.
-
-    Extra source columns (including labels) are accepted for display but are
-    never passed to the classifier.
-    """
+def parse_traffic_csv(content: bytes, filename: str) -> tuple[ValidationResponse, list[dict[str, float | str | None]]]:
+    """Validate required model columns; ignore labels and other source columns."""
     def reject(message: str) -> None:
         raise HTTPException(422, detail=message)
 
@@ -40,29 +40,38 @@ def parse_traffic_csv(content: bytes, filename: str) -> tuple[ValidationResponse
             reject("Missing required model features: " + ", ".join(missing))
 
         preview: list[dict[str, str]] = []
-        feature_rows: list[dict[str, float]] = []
+        feature_rows: list[dict[str, float | str | None]] = []
         count = 0
         for line, values in enumerate(reader, start=2):
-            if not values:
+            if not values or (len(values) == 1 and not values[0].strip()):
                 continue
             count += 1
             if count > settings.max_rows:
                 reject(f"CSV exceeds {settings.max_rows} rows.")
             if len(values) != len(headers):
                 reject(f"Row {line}: column count does not match header.")
-            string_row = dict(zip(headers, (value.strip() for value in values)))
-            numeric_row: dict[str, float] = {}
-            for feature in REQUIRED_COLUMNS:
+            source_row = dict(zip(headers, (value.strip() for value in values)))
+            feature_row: dict[str, float | str | None] = {}
+            for feature in NUMERIC_FEATURES:
+                raw = source_row[feature]
+                if not raw:
+                    feature_row[feature] = None
+                    continue
                 try:
-                    number = float(string_row[feature])
+                    number = float(raw)
                 except ValueError:
-                    reject(f"Row {line}: {feature} must be numeric.")
-                if not math.isfinite(number) or number < 0:
-                    reject(f"Row {line}: {feature} must be finite and nonnegative.")
-                numeric_row[feature] = number
-            feature_rows.append(numeric_row)
+                    reject(f"Row {line}: {feature} must be numeric or blank.")
+                if not math.isfinite(number):
+                    reject(f"Row {line}: {feature} must be finite.")
+                feature_row[feature] = number
+            for feature in CATEGORICAL_FEATURES:
+                raw = source_row[feature]
+                if len(raw) > 128:
+                    reject(f"Row {line}: {feature} must not exceed 128 characters.")
+                feature_row[feature] = raw or None
+            feature_rows.append(feature_row)
             if len(preview) < 5:
-                preview.append(string_row)
+                preview.append(source_row)
 
         if not count:
             reject("CSV contains no traffic rows.")
@@ -71,6 +80,11 @@ def parse_traffic_csv(content: bytes, filename: str) -> tuple[ValidationResponse
             row_count=count,
             columns=headers,
             preview=preview,
+            schema_name=SCHEMA_NAME,
+            message=(
+                "CSV structure and 42 model features validated. Blank feature values are imputed by the fitted pipeline; "
+                "this endpoint generated no predictions."
+            ),
         )
         return result, feature_rows
     except csv.Error:

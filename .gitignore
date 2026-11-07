@@ -12,4 +12,6 @@ test-results/
 backend/.pytest-workspace-qa/
 *.tsbuildinfo
 /data/kagglehub-cache/
+/data/raw/unsw-nb15/
+/backend/ml/artifacts/
 *.joblib.tmp

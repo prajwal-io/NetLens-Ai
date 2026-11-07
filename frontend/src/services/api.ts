@@ -1,4 +1,12 @@
 export interface Health { status: string; service: string; model_loaded: boolean; model_version: string | null }
+export interface FeatureSchema {
+  schema_name: string;
+  feature_count: number;
+  features: string[];
+  numeric_features: string[];
+  categorical_features: string[];
+  excluded_columns: string[];
+}
 export interface Validation {
   valid: boolean;
   filename: string;
@@ -10,10 +18,10 @@ export interface Validation {
 }
 export interface Prediction {
   row_id: number;
-  label: 'normal' | 'anomalous';
-  anomaly_score: number;
+  label: 'normal' | 'malicious';
+  malicious_score: number;
 }
-export interface PredictionPreview extends Prediction { features: Record<string, number> }
+export interface PredictionPreview extends Prediction { features: Record<string, string | number | null> }
 export interface Analysis {
   analysis_id: string;
   source_type: 'uploaded_csv';
@@ -21,7 +29,7 @@ export interface Analysis {
   model_version: string;
   threshold: number;
   total_flows: number;
-  counts: { normal: number; anomalous: number };
+  counts: { normal: number; malicious: number };
   predictions: Prediction[];
   preview: PredictionPreview[];
   score_definition: string;
@@ -29,26 +37,35 @@ export interface Analysis {
 }
 export interface EvaluationMetrics {
   accuracy: number;
+  balanced_accuracy: number;
   precision: number;
   recall: number;
   f1: number;
-  support: { normal: number; anomalous: number };
+  average_precision: number;
+  roc_auc: number;
+  support: { normal: number; malicious: number };
   confusion_matrix: { labels: string[]; rows_actual_columns_predicted: number[][] };
 }
 export interface ModelInfo {
   model_name: string;
   model_version: string;
   algorithm: string;
-  dataset: { name: string; source: string; slug: string; labeled_file: string; rows: number; sha256: string };
-  target: { column: string; normal_value: number; anomalous_value: number; meaning: string };
+  dataset: { name: string; source: string; mirror: string; mirror_commit: string; license: string; rows: number; training_rows: number; test_rows: number; training_file: string; test_file: string; training_sha256: string; test_sha256: string };
+  target: { column: string; normal_value: number; malicious_value: number; meaning: string; context_column_excluded: string };
   features: string[];
+  numeric_features: string[];
+  categorical_features: string[];
   feature_count: number;
+  feature_count_numeric: number;
+  feature_count_categorical: number;
+  excluded_columns: string[];
   decision_threshold: number;
   score_definition: string;
-  split: { strategy: string; train_rows: number; validation_rows: number; test_rows: number; fitted_rows: number; test_start: string; test_end: string };
-  class_counts: Record<string, { normal: number; anomalous: number }>;
+  preprocessing: { numeric_missing_values: string; categorical_missing_values: string; categorical_encoding: string; missing_values_found: { training: number; test: number } };
+  split: { strategy: string; random_state: number; train_rows: number; validation_rows: number; test_rows: number; fitted_rows: number; feature_signature_groups: { unique_feature_signatures: number; repeated_feature_signatures: number; conflicting_feature_signatures: number } };
+  class_counts: Record<string, { normal: number; malicious: number }>;
   validation_candidates: Record<string, { threshold: number; metrics: Omit<EvaluationMetrics, 'support' | 'confusion_matrix'> }>;
-  evaluation: { split: string; rows: number; start: string; end: string; metrics: EvaluationMetrics };
+  evaluation: { split: string; rows: number; threshold: number; metrics: EvaluationMetrics; repeated_feature_signature_rows: number; repeated_feature_signature_rate: number; novel_feature_signature_evaluation: { rows: number; metrics: EvaluationMetrics | null; definition: string } };
   evaluation_warning: string | null;
   limitations: string[];
 }
@@ -77,7 +94,8 @@ function validationResponse(body: unknown): Validation {
 
 function analysisResponse(body: unknown): Analysis {
   const result = body as Analysis | null;
-  if (!result || typeof result.analysis_id !== 'string' || result.source_type !== 'uploaded_csv' || typeof result.filename !== 'string' || typeof result.model_version !== 'string' || !Number.isFinite(result.threshold) || result.threshold < 0 || result.threshold > 1 || !Number.isInteger(result.total_flows) || result.total_flows < 1 || !result.counts || !Number.isInteger(result.counts.normal) || !Number.isInteger(result.counts.anomalous) || result.counts.normal + result.counts.anomalous !== result.total_flows || !Array.isArray(result.predictions) || result.predictions.length !== result.total_flows || !result.predictions.every((prediction, index) => prediction && prediction.row_id === index + 1 && (prediction.label === 'normal' || prediction.label === 'anomalous') && Number.isFinite(prediction.anomaly_score) && prediction.anomaly_score >= 0 && prediction.anomaly_score <= 1) || !Array.isArray(result.preview) || result.preview.length > Math.min(5, result.total_flows) || !result.preview.every((row) => row && (row.label === 'normal' || row.label === 'anomalous') && typeof row.features === 'object' && Object.values(row.features).every(Number.isFinite)) || typeof result.score_definition !== 'string' || typeof result.message !== 'string') {
+  const validFeatureValue = (value: unknown) => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
+  if (!result || typeof result.analysis_id !== 'string' || result.source_type !== 'uploaded_csv' || typeof result.filename !== 'string' || typeof result.model_version !== 'string' || !Number.isFinite(result.threshold) || result.threshold < 0 || result.threshold > 1 || !Number.isInteger(result.total_flows) || result.total_flows < 1 || !result.counts || !Number.isInteger(result.counts.normal) || !Number.isInteger(result.counts.malicious) || result.counts.normal + result.counts.malicious !== result.total_flows || !Array.isArray(result.predictions) || result.predictions.length !== result.total_flows || !result.predictions.every((prediction, index) => prediction && prediction.row_id === index + 1 && (prediction.label === 'normal' || prediction.label === 'malicious') && Number.isFinite(prediction.malicious_score) && prediction.malicious_score >= 0 && prediction.malicious_score <= 1) || !Array.isArray(result.preview) || result.preview.length > Math.min(5, result.total_flows) || !result.preview.every((row) => row && (row.label === 'normal' || row.label === 'malicious') && typeof row.features === 'object' && Object.values(row.features).every(validFeatureValue)) || typeof result.score_definition !== 'string' || typeof result.message !== 'string') {
     throw new ApiError('The analysis response was incomplete. Please retry.');
   }
   return result;
@@ -104,7 +122,7 @@ function upload<T>(path: string, file: File, validate: (body: unknown) => T, opt
 
 function isModelInfo(body: any): body is ModelInfo {
   const metrics = body?.evaluation?.metrics;
-  return !!body && typeof body.model_name === 'string' && typeof body.model_version === 'string' && typeof body.algorithm === 'string' && typeof body.dataset?.name === 'string' && typeof body.dataset?.source === 'string' && Array.isArray(body.features) && Number.isInteger(body.feature_count) && body.features.length === body.feature_count && !!metrics && ['accuracy', 'precision', 'recall', 'f1'].every((key) => Number.isFinite(metrics[key])) && !!metrics.support && !!metrics.confusion_matrix && Array.isArray(metrics.confusion_matrix.rows_actual_columns_predicted) && Array.isArray(body.limitations);
+  return !!body && typeof body.model_name === 'string' && typeof body.model_version === 'string' && typeof body.algorithm === 'string' && typeof body.dataset?.name === 'string' && typeof body.dataset?.source === 'string' && Array.isArray(body.features) && Number.isInteger(body.feature_count) && body.features.length === body.feature_count && Array.isArray(body.numeric_features) && Array.isArray(body.categorical_features) && !!metrics && ['accuracy', 'balanced_accuracy', 'precision', 'recall', 'f1', 'average_precision', 'roc_auc'].every((key) => Number.isFinite(metrics[key])) && !!metrics.support && Number.isInteger(metrics.support.normal) && Number.isInteger(metrics.support.malicious) && !!metrics.confusion_matrix && Array.isArray(metrics.confusion_matrix.rows_actual_columns_predicted) && Number.isInteger(body.evaluation?.novel_feature_signature_evaluation?.rows) && Array.isArray(body.limitations);
 }
 
 export const api = {
@@ -119,6 +137,14 @@ export const api = {
       if (error instanceof DOMException && error.name === 'TimeoutError') throw new ApiError('The API request timed out. Please retry.');
       throw error;
     }
+  },
+  async featureSchema(signal?: AbortSignal): Promise<FeatureSchema> {
+    const response = await fetch(base + '/model/schema', { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
+    const body = decode(await response.text(), response.status) as FeatureSchema;
+    if (!body || typeof body.schema_name !== 'string' || !Number.isInteger(body.feature_count) || body.feature_count < 1 || !Array.isArray(body.features) || body.features.length !== body.feature_count || !Array.isArray(body.numeric_features) || !Array.isArray(body.categorical_features) || !Array.isArray(body.excluded_columns) || !body.features.every((feature) => typeof feature === 'string')) {
+      throw new ApiError('The model input schema response was incomplete. Please retry.');
+    }
+    return body;
   },
   async modelInfo(signal?: AbortSignal): Promise<ModelInfo> {
     const response = await fetch(base + '/model/info', { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });

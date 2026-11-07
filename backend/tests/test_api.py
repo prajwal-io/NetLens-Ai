@@ -1,26 +1,97 @@
-from pathlib import Path
+import csv
+import io
 
+import joblib
+import numpy as np
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
 from app.services.model_service import model_service
-from ml.schema import FEATURE_COLUMNS
+from ml.schema import CATEGORICAL_FEATURES, FEATURE_COLUMNS, NUMERIC_FEATURES
+from ml.train import candidate_models
 
 
-HEADER = ",".join(FEATURE_COLUMNS).encode()
-GOOD = HEADER + b"\n2.15,0.38,0,6.58,0.52,0,0,0\n1.42,10.74,0,7.55,0.65,10,167,1\n"
+def _row(index: int, malicious: int) -> dict[str, object]:
+    row: dict[str, object] = {
+        column: float(index + 1 + malicious * 3)
+        for column in NUMERIC_FEATURES
+    }
+    row.update({
+        "proto": "tcp" if malicious else "udp",
+        "service": "http" if malicious else "-",
+        "state": "FIN" if malicious else "CON",
+        "label": malicious,
+        "attack_cat": "Generic" if malicious else "Normal",
+        "id": index + 1,
+    })
+    return row
+
+
+def _csv(rows: list[dict[str, object]], extra: bool = False) -> bytes:
+    columns = list(FEATURE_COLUMNS) + (["label", "attack_cat", "id"] if extra else [])
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows({column: row.get(column, "") for column in columns} for row in rows)
+    return stream.getvalue().encode("utf-8")
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "database_path", tmp_path / "test.db")
+    rows = [_row(index, index % 2) for index in range(80)]
+    frame = pd.DataFrame(rows)
+    labels = frame["label"].to_numpy(dtype="int64")
+    pipeline = candidate_models(forest_trees=8)["Random Forest"]
+    pipeline.fit(frame.loc[:, FEATURE_COLUMNS], labels)
+    artifact_path = tmp_path / "test-model.joblib"
+    metadata = {
+        "model_name": "Random Forest",
+        "model_version": "netsight-test-v1",
+        "algorithm": "Random Forest",
+        "dataset": {"name": "test fixture", "source": "https://example.invalid"},
+        "target": {"column": "label", "normal_value": 0, "malicious_value": 1},
+        "features": list(FEATURE_COLUMNS),
+        "numeric_features": list(NUMERIC_FEATURES),
+        "categorical_features": list(CATEGORICAL_FEATURES),
+        "feature_count": len(FEATURE_COLUMNS),
+        "decision_threshold": 0.5,
+        "score_definition": "test fixture score",
+        "validation_candidates": {"Random Forest": {"threshold": 0.5, "metrics": {"f1": 1.0}}},
+        "evaluation": {
+            "split": "test fixture holdout",
+            "rows": 2,
+            "metrics": {
+                "accuracy": 1.0,
+                "balanced_accuracy": 1.0,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "average_precision": 1.0,
+                "roc_auc": 1.0,
+                "support": {"normal": 1, "malicious": 1},
+                "confusion_matrix": {"labels": ["normal", "malicious"], "rows_actual_columns_predicted": [[1, 0], [0, 1]]},
+            },
+            "repeated_feature_signature_rows": 0,
+            "repeated_feature_signature_rate": 0.0,
+            "novel_feature_signature_evaluation": {"rows": 2, "metrics": None, "definition": "test fixture"},
+        },
+        "evaluation_warning": None,
+        "limitations": ["Test-only model fixture."],
+    }
+    joblib.dump({"format_version": 2, "pipeline": pipeline, "features": list(FEATURE_COLUMNS), "threshold": 0.5, "metadata": metadata}, artifact_path)
+    original_path = model_service.artifact_path
+    monkeypatch.setattr(model_service, "artifact_path", artifact_path)
     with TestClient(app) as test_client:
         yield test_client
+    monkeypatch.setattr(model_service, "artifact_path", original_path)
+    model_service.load()
 
 
-def upload(client, content, name="measurements.csv", endpoint="validate"):
+def upload(client, content: bytes, name: str = "flows.csv", endpoint: str = "validate"):
     return client.post(f"/api/v1/traffic/{endpoint}", files={"file": (name, content, "text/csv")})
 
 
@@ -28,88 +99,86 @@ def test_health_and_database(client):
     response = client.get("/api/v1/health")
     assert response.status_code == 200
     assert response.json()["model_loaded"] is True
-    assert response.json()["model_version"] == "netsight-rf-v1"
+    assert response.json()["model_version"] == "netsight-test-v1"
     assert settings.database_path.exists()
 
 
-def test_model_info_contains_real_evaluation(client):
+def test_model_schema_matches_feature_contract(client):
+    response = client.get("/api/v1/model/schema")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_name"] == "unsw-nb15-flow-v1"
+    assert body["feature_count"] == len(FEATURE_COLUMNS) == 42
+    assert set(body["numeric_features"]) == set(NUMERIC_FEATURES)
+    assert set(body["categorical_features"]) == set(CATEGORICAL_FEATURES)
+    assert {"id", "attack_cat", "label"}.issubset(body["excluded_columns"])
+
+
+def test_model_info_exposes_evaluated_metrics(client):
     response = client.get("/api/v1/model/info")
     assert response.status_code == 200
     body = response.json()
-    assert body["model_version"] == "netsight-rf-v1"
-    assert body["dataset"]["rows"] == 1001
-    assert body["features"] == list(FEATURE_COLUMNS)
-    assert body["target"]["meaning"] == "network performance anomaly; not an intrusion or malware label"
-    metrics = body["evaluation"]["metrics"]
-    assert body["evaluation"]["rows"] == 201
-    assert metrics["support"]["anomalous"] == 14
-    assert metrics["confusion_matrix"]["rows_actual_columns_predicted"] == [[187, 0], [11, 3]]
-    assert "not an intrusion" in body["target"]["meaning"]
+    assert body["model_version"] == "netsight-test-v1"
+    assert body["feature_count"] == len(FEATURE_COLUMNS)
+    assert body["evaluation"]["metrics"]["support"]["malicious"] == 1
 
 
-def test_valid_csv(client):
-    response = upload(client, GOOD)
+def test_valid_mixed_feature_csv(client):
+    response = upload(client, _csv([_row(0, 0), _row(1, 1)]))
     assert response.status_code == 200
     body = response.json()
     assert body["row_count"] == 2
-    assert body["schema_name"] == "network-metrics-v1"
-    assert body["preview"][0]["throughput"] == "2.15"
+    assert body["schema_name"] == "unsw-nb15-flow-v1"
+    assert body["preview"][0]["proto"] == "udp"
     assert "predictions" not in body
 
 
-def test_extra_label_fields_are_not_prediction_inputs(client):
-    content = GOOD.replace(HEADER, HEADER + b",anomaly,anomaly_packet_loss")
-    content = content.replace(b"2.15,0.38,0,6.58,0.52,0,0,0", b"2.15,0.38,0,6.58,0.52,0,0,0,0,0")
-    content = content.replace(b"1.42,10.74,0,7.55,0.65,10,167,1", b"1.42,10.74,0,7.55,0.65,10,167,1,1,1")
-    response = upload(client, content)
-    assert response.status_code == 200
-    assert "anomaly" in response.json()["columns"]
-
-
-def test_real_inference_and_counts_match(client):
-    response = upload(client, GOOD, endpoint="analyze")
+def test_target_and_identifier_columns_are_ignored(client):
+    response = upload(client, _csv([_row(0, 0), _row(1, 1)], extra=True), endpoint="analyze")
     assert response.status_code == 200
     body = response.json()
-    assert body["source_type"] == "uploaded_csv"
-    assert body["filename"] == "measurements.csv"
-    assert body["model_version"] == "netsight-rf-v1"
-    assert body["total_flows"] == len(body["predictions"]) == 2
-    assert body["counts"]["normal"] + body["counts"]["anomalous"] == body["total_flows"]
-    assert [prediction["row_id"] for prediction in body["predictions"]] == [1, 2]
-    assert all(prediction["label"] in {"normal", "anomalous"} for prediction in body["predictions"])
-    assert all(0 <= prediction["anomaly_score"] <= 1 for prediction in body["predictions"])
-    assert len(body["preview"]) == 2
-    assert "not verified malicious activity" in body["message"]
+    assert {"label", "attack_cat", "id"}.issubset(body["preview"][0]["features"].keys()) is False
+    assert body["counts"]["normal"] + body["counts"]["malicious"] == body["total_flows"] == 2
+    assert [item["row_id"] for item in body["predictions"]] == [1, 2]
+    assert all(item["label"] in {"normal", "malicious"} for item in body["predictions"])
+    assert all(0 <= item["malicious_score"] <= 1 for item in body["predictions"])
+    assert "not proof" in body["message"]
+
+
+def test_blank_values_and_signed_numeric_values_are_accepted(client):
+    first = _row(0, 0)
+    first[NUMERIC_FEATURES[0]] = ""
+    first[NUMERIC_FEATURES[1]] = -0.25
+    first["service"] = ""
+    response = upload(client, _csv([first]))
+    assert response.status_code == 200
+    assert response.json()["row_count"] == 1
 
 
 @pytest.mark.parametrize("content", [
     b"",
-    b"x,y\n1,2",
-    HEADER,
-    GOOD.replace(b"2.15,0.38", b"2.15,-0.38"),
-    GOOD.replace(b"2.15,0.38", b"2.15,nan"),
-    GOOD.replace(b"2.15,0.38", b"2.15,inf"),
-    GOOD.replace(b"2.15,0.38", b"2.15,not-a-number"),
-    GOOD.replace(b"0.38", b"0.38,unexpected"),
+    b"x,y\n1,2\n",
+    (",".join(FEATURE_COLUMNS) + "\n").encode(),
+    _csv([_row(0, 0)]).replace(b"1.0", b"not-a-number", 1),
+    _csv([_row(0, 0)]).replace(b"1.0", b"inf", 1),
+    _csv([_row(0, 0)]).replace(b"proto,service", b"proto,proto"),
     b"\xff\xfe",
-    GOOD.replace(b"throughput", b"congestion"),
-    GOOD.replace(b"throughput,congestion", b"throughput,throughput"),
 ])
-def test_bad_csv(client, content):
+def test_invalid_csv_is_rejected(client, content):
     response = upload(client, content)
     assert response.status_code == 422
     assert response.json()["error"]["message"]
 
 
 def test_upload_limits(client, monkeypatch):
-    assert upload(client, GOOD, "measurements.txt").status_code == 415
+    assert upload(client, _csv([_row(0, 0)]), "flows.txt").status_code == 415
     monkeypatch.setattr(settings, "max_upload_bytes", 10)
-    assert upload(client, GOOD).status_code == 413
+    assert upload(client, _csv([_row(0, 0)])).status_code == 413
 
 
 def test_row_limit(client, monkeypatch):
     monkeypatch.setattr(settings, "max_rows", 1)
-    assert upload(client, GOOD).status_code == 422
+    assert upload(client, _csv([_row(0, 0), _row(1, 1)])).status_code == 422
 
 
 def test_missing_file(client):
@@ -122,8 +191,9 @@ def test_model_unavailable_returns_503(client, tmp_path, monkeypatch):
         monkeypatch.setattr(model_service, "artifact_path", tmp_path / "missing-model.joblib")
         assert model_service.load() is False
         assert client.get("/api/v1/health").json()["model_loaded"] is False
+        assert client.get("/api/v1/model/schema").status_code == 200
         assert client.get("/api/v1/model/info").status_code == 503
-        assert upload(client, GOOD, endpoint="analyze").status_code == 503
+        assert upload(client, _csv([_row(0, 0)]), endpoint="analyze").status_code == 503
     finally:
         monkeypatch.setattr(model_service, "artifact_path", original_path)
         assert model_service.load() is True

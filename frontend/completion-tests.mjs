@@ -9,7 +9,7 @@ const page=await context.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
  await page.goto(base+'/command-center');await page.getByText('Backend connected',{exact:true}).waitFor();
- await page.getByText('Loaded / netsight-rf-v1',{exact:true}).waitFor();
+ await page.getByText('Loaded / netsight-rf-unsw-v1',{exact:true}).waitFor();
  // Repeating background: real CSS cycle, pause persistence, reduced motion.
  assert.equal(await page.locator('.edge-signal').first().evaluate(e=>getComputedStyle(e).animationIterationCount),'infinite');
  await page.getByRole('button',{name:'Pause background animation',exact:true}).click();
@@ -37,19 +37,19 @@ try{
  await page.getByRole('button',{name:'Remove selected file'}).click();
  await page.getByLabel('Traffic CSV file').setInputFiles('../data/samples/valid-flows.csv');
  await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
- await page.getByText('3 rows validated',{exact:true}).waitFor();
+ await page.getByText('6 rows validated',{exact:true}).waitFor();
  await page.getByRole('heading',{name:'Validation checks',exact:true}).waitFor();
- await page.getByText('3 rows passed structure and numeric-value checks.',{exact:true}).waitFor();
+ await page.getByText('6 rows passed structure and feature-type checks.',{exact:true}).waitFor();
  // Run actual backend inference and inspect a CSV exported from those predictions.
- await page.getByRole('button',{name:'Analyze traffic',exact:true}).click();
+ await page.getByRole('button',{name:'Analyze flows',exact:true}).click();
  await page.getByRole('heading',{name:'Model analysis',exact:true}).waitFor();
- await page.getByText('Actual model output / netsight-rf-v1',{exact:true}).waitFor();
+ await page.getByText('Actual model output / netsight-rf-unsw-v1',{exact:true}).waitFor();
  const [predictionDownload]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Export predictions CSV',exact:true}).click()]);
  const predictionCsv=fs.readFileSync(await predictionDownload.path(),'utf8');
- assert(predictionCsv.startsWith('row_id,label,anomaly_score,decision_threshold,model_version,source_file'));
- assert.equal(predictionCsv.trim().split(/\r?\n/).length,4);
+ assert(predictionCsv.startsWith('row_id,label,malicious_score,decision_threshold,model_version,source_file'));
+ assert.equal(predictionCsv.trim().split(/\r?\n/).length,7);
  await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
- await page.getByText('3 rows validated',{exact:true}).waitFor();
+ await page.getByText('6 rows validated',{exact:true}).waitFor();
  await page.route('**/traffic/validate',async route=>{await new Promise(r=>setTimeout(r,800));try{await route.continue()}catch{}});
  await page.getByRole('button',{name:'Validate CSV',exact:true}).click();
  await page.getByRole('button',{name:'Cancel validation',exact:true}).click();
@@ -80,11 +80,11 @@ try{
  await page.getByRole('button',{name:'Download validation receipt',exact:true}).waitFor();
  const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Download validation receipt',exact:true}).click()]);
  const receipt=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
- assert.equal(receipt.kind,'csv-validation');assert.equal(receipt.rows,3);assert(!('predictions' in receipt));assert(!('preview' in receipt));
+ assert.equal(receipt.kind,'csv-validation');assert.equal(receipt.rows,6);assert(!('predictions' in receipt));assert(!('preview' in receipt));
  await page.goto(base+'/model-lab');
- await page.getByRole('heading',{name:'Held-out evaluation',exact:true}).waitFor();
- await page.getByText('21.4%',{exact:true}).waitFor();
- await page.getByText('Experimental result:',{exact:false}).waitFor();
+ await page.getByRole('heading',{name:'Official held-out test',exact:true}).waitFor();
+ await page.getByText('89.9%',{exact:true}).waitFor();
+ await page.getByText('Evaluation caveat:',{exact:false}).waitFor();
  // Browser back/forward, sharable investigation state, filtering, sorting and focused mobile details.
  await page.goto(base+'/threat-investigation');
  await page.getByLabel('Classification',{exact:true}).selectOption('Normal');
