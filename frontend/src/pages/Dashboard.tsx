@@ -1,3 +1,5 @@
+import { useAnalysis } from '../services/analysis';
+import { AnalysisWorkspace } from '../components/AnalysisWorkspace';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Box, CheckCircle2, FlaskConical } from 'lucide-react';
@@ -15,7 +17,7 @@ type DashboardSource = 'sample' | 'latest-validation';
 const isDashboardSource = (value: unknown): value is DashboardSource => value === 'sample' || value === 'latest-validation';
 const isRange = (value: unknown): value is string => value === '3 hours' || value === 'Last hour';
 
-export default function Dashboard({ health }: { health: Health | null }) {
+function SampleDashboard({ health }: { health: Health | null }) {
   const { receipts } = useReceipts();
   const latestReceipt = receipts[0] ?? null;
   const [source, setSource] = usePreference('dashboard-source', 'sample' as DashboardSource, isDashboardSource);
@@ -137,4 +139,9 @@ export default function Dashboard({ health }: { health: Health | null }) {
       <Panel title="Connection atlas" className="atlas-panel"><NetworkMap compact /></Panel>
     </div>
   </>;
+}
+
+export default function Dashboard({ health }: { health: Health | null }) {
+ const analysis = useAnalysis();
+ return analysis ? <AnalysisWorkspace analysis={analysis} mode="Command Center" /> : <SampleDashboard health={health} />;
 }

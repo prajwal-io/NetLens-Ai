@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 
 import numpy as np
 import pandas as pd
@@ -16,11 +20,30 @@ from ml.schema import (
     TARGET_COLUMN,
     TEST_FILENAME,
     TRAINING_FILENAME,
+    EXPECTED_TEST_BYTES,
+    EXPECTED_TEST_ROWS,
+    EXPECTED_TEST_SHA256,
+    EXPECTED_TRAIN_BYTES,
+    EXPECTED_TRAIN_ROWS,
+    EXPECTED_TRAIN_SHA256,
 )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATASET_ROOT = PROJECT_ROOT / "data" / "raw" / DATASET_SLUG
+
+
+@dataclass(frozen=True)
+class SplitExpectation:
+    rows: int
+    bytes: int
+    sha256: str
+
+
+OFFICIAL_SPLIT_EXPECTATIONS: Mapping[str, SplitExpectation] = MappingProxyType({
+    TRAINING_FILENAME: SplitExpectation(EXPECTED_TRAIN_ROWS, EXPECTED_TRAIN_BYTES, EXPECTED_TRAIN_SHA256),
+    TEST_FILENAME: SplitExpectation(EXPECTED_TEST_ROWS, EXPECTED_TEST_BYTES, EXPECTED_TEST_SHA256),
+})
 
 
 @dataclass(frozen=True)
@@ -90,11 +113,71 @@ def _read_split(path: Path, split_name: str) -> tuple[pd.DataFrame, pd.Series, i
     return features, labels, missing_values
 
 
-def load_dataset(data_dir: Path | None = None) -> Dataset:
-    """Load the official training partition and the untouched official test partition."""
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _csv_row_count(path: Path, split_name: str) -> int:
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as stream:
+            reader = csv.reader(stream, strict=True)
+            headers = next(reader, None)
+            if not headers or len(headers) != len(set(headers)):
+                raise ValueError(f"{split_name.capitalize()} CSV has a missing or duplicate header.")
+            required = {*FEATURE_COLUMNS, TARGET_COLUMN}
+            missing = sorted(required - set(headers))
+            if missing:
+                raise ValueError(f"{split_name.capitalize()} CSV is missing required columns: {', '.join(missing)}")
+            return sum(1 for row in reader if row and any(value.strip() for value in row))
+    except (OSError, UnicodeError, csv.Error) as exc:
+        raise ValueError(f"{split_name.capitalize()} CSV is not a readable CSV: {exc}") from exc
+
+
+def verify_split_file(path: Path, split_name: str, expected: SplitExpectation) -> dict[str, int | str]:
+    """Check the pinned file size, canonical row count, and SHA-256 before parsing it."""
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"{split_name.capitalize()} CSV is missing at {path}. "
+            "Run `python -m ml.download_dataset` from the backend directory."
+        )
+    actual_bytes = path.stat().st_size
+    if actual_bytes != expected.bytes:
+        raise ValueError(
+            f"{split_name.capitalize()} CSV has {actual_bytes:,} bytes; "
+            f"expected the pinned {expected.bytes:,}-byte UNSW-NB15 split."
+        )
+    actual_rows = _csv_row_count(path, split_name)
+    if actual_rows != expected.rows:
+        raise ValueError(
+            f"{split_name.capitalize()} CSV has {actual_rows:,} rows; "
+            f"expected {expected.rows:,} canonical UNSW-NB15 rows."
+        )
+    actual_sha256 = _sha256(path)
+    if actual_sha256 != expected.sha256:
+        raise ValueError(
+            f"{split_name.capitalize()} CSV SHA-256 does not match the pinned UNSW-NB15 file. "
+            "Re-download both splits before training or evaluation."
+        )
+    return {"rows": actual_rows, "bytes": actual_bytes, "sha256": actual_sha256}
+
+
+def load_dataset(
+    data_dir: Path | None = None,
+    *,
+    expected_splits: Mapping[str, SplitExpectation] = OFFICIAL_SPLIT_EXPECTATIONS,
+) -> Dataset:
+    """Load only the verified official training and untouched test partitions."""
     root = (data_dir or DATASET_ROOT).resolve()
     training_path = root / TRAINING_FILENAME
     test_path = root / TEST_FILENAME
+    if set(expected_splits) != {TRAINING_FILENAME, TEST_FILENAME}:
+        raise ValueError("Dataset expectations must define both training.csv and testing.csv.")
+    verify_split_file(training_path, "training", expected_splits[TRAINING_FILENAME])
+    verify_split_file(test_path, "test", expected_splits[TEST_FILENAME])
     training_features, training_labels, train_missing = _read_split(training_path, "training")
     test_features, test_labels, test_missing = _read_split(test_path, "test")
     return Dataset(

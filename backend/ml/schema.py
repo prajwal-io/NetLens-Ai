@@ -47,3 +47,9 @@ REMOTE_TRAINING_CONTENT = "UNSW_NB15_testing-set.csv"  # 175,341 rows
 REMOTE_TESTING_CONTENT = "UNSW_NB15_training-set.csv"  # 82,332 rows
 EXPECTED_TRAIN_ROWS = 175_341
 EXPECTED_TEST_ROWS = 82_332
+# SHA-256 and byte-size pins for the exact CSV objects at MIRROR_COMMIT.
+# UNSW publishes canonical row counts; the mirror commit supplies immutable bytes.
+EXPECTED_TRAIN_BYTES = 32_293_018
+EXPECTED_TEST_BYTES = 15_380_800
+EXPECTED_TRAIN_SHA256 = "bec7dd5ec88dc2a0ccc7a07879d338395ed7421750f675fd0339e07dfe0648fa"
+EXPECTED_TEST_SHA256 = "734fe6642edf758f7c94d7d9149426b49d202fe8e7bf0bef47392489c3c0a559"

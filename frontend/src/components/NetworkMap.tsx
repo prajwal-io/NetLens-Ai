@@ -29,7 +29,7 @@ export function NetworkMap({compact=false,selectedDevice,onDeviceSelect}:{compac
    <rect width="800" height="420" fill={`url(#${patternId})`}/>
    {[70,120,170].map(r=><circle key={r} cx="400" cy="210" r={r} fill="none" stroke="var(--map-ring)"/>)}
    {nodes.slice(1).map(n=><g key={n.id}>
-    <path d={`M400 210 C${n.x} 210,400 ${n.y},${n.x} ${n.y}`} fill="none" stroke={selected===n.id?'var(--signal-blue)':'var(--map-link)'} strokeWidth={selected===n.id?2:1.2}/>
+    <path className={`network-link ${selected===n.id?'is-selected':'is-muted'}`} d={`M400 210 C${n.x} 210,400 ${n.y},${n.x} ${n.y}`} fill="none" stroke={selected===n.id?'var(--signal-blue)':'var(--map-link)'} strokeWidth={selected===n.id?2:1.2}/>
     {selected===n.id&&!reduce&&!paused&&inView&&visible&&<circle r="4" fill="var(--signal-blue)"><animateMotion dur="3s" repeatCount="indefinite" path={`M400 210 C${n.x} 210,400 ${n.y},${n.x} ${n.y}`}/></circle>}
    </g>)}
    {nodes.map(n=><g key={n.id} role="button" tabIndex={0} aria-label={`Inspect ${n.name}`} aria-pressed={selected===n.id} onClick={()=>selectDevice(n.id)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectDevice(n.id)}}} className="network-node"><title>{n.name}: {n.address}</title>

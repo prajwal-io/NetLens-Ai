@@ -1,0 +1,115 @@
+/* Ambient motion belongs to the network canvas; product data stays still. */
+.topology-edge {
+  width: clamp(80px, 10vw, 140px);
+  opacity: .94;
+}
+
+.topology-background .edge-signal {
+  animation-duration: 24s;
+  stroke-width: 2.1;
+}
+
+.topology-background .edge-signal-delayed {
+  animation-delay: -13s;
+}
+
+.topology-background .rain-column {
+  animation-duration: var(--rain-duration, 34s);
+}
+
+.topology-background .topology-node-pulse {
+  fill: none;
+  stroke: var(--signal-blue);
+  stroke-width: .8;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: node-pulse 7s linear infinite;
+}
+
+.topology-background[data-running="false"] .edge-signal {
+  opacity: .12 !important;
+}
+
+.topology-background .topology-route-alert {
+  opacity: .42;
+}
+
+.topology-background[data-page="network-pulse"] .topology-edge {
+  opacity: 1;
+}
+
+.topology-background[data-page="traffic-analyzer"] .edge-signal {
+  animation-duration: 18s;
+}
+
+.topology-background[data-page="threat-investigation"] .topology-route-alert {
+  animation: route-attention 8s linear infinite;
+}
+
+.topology-background[data-page="model-lab"] .edge-signal,
+.topology-background[data-page="reports"] .edge-signal {
+  animation-duration: 30s;
+}
+
+.network-link {
+  opacity: .3;
+  transition: opacity 180ms var(--ease-out), stroke 180ms var(--ease-out);
+}
+
+.network-link.is-selected {
+  opacity: 1;
+}
+
+.network-link.is-muted {
+  opacity: .24;
+}
+
+@keyframes route-attention {
+  0%, 100% { opacity: .36; }
+  50% { opacity: .76; }
+}
+
+@keyframes node-pulse {
+  0% { transform: scale(.72); opacity: .56; }
+  75%, 100% { transform: scale(1.55); opacity: 0; }
+}
+
+@keyframes telemetry-edge-fall {
+  0% { transform: translate3d(0, -112vh, 0); opacity: 0; }
+  12% { opacity: .38; }
+  78% { opacity: .3; }
+  100% { transform: translate3d(0, 108vh, 0); opacity: 0; }
+}
+
+.topology-background .rain-column {
+  animation-name: telemetry-edge-fall;
+}
+
+.topology-background[data-running="false"] .topology-route-alert {
+  animation-play-state: paused;
+  opacity: .42;
+}
+
+@media (max-width: 760px) {
+  .topology-background .topology-edge {
+    width: clamp(68px, 18vw, 105px);
+    opacity: .76;
+  }
+
+  .topology-background .rain-column {
+    opacity: .86;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topology-background .edge-signal,
+  .topology-background .rain-column,
+  .topology-background .topology-route-alert,
+  .topology-background .topology-node-pulse {
+    animation: none !important;
+  }
+
+  .network-link {
+    transition: none;
+  }
+}

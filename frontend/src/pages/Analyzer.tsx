@@ -1,3 +1,4 @@
+import { useAnalysis, setAnalysis } from '../services/analysis';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownToLine, ArrowRight, CheckCircle2, Download, FileText, Upload, X } from 'lucide-react';
@@ -19,7 +20,8 @@ function readableSize(size: number) {
 }
 
 function csvCell(value: string | number) {
-  const text = String(value);
+  const raw = String(value);
+  const text = /^[\s]*[=+@-]/.test(raw) ? `'${raw}` : raw;
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
@@ -41,7 +43,7 @@ export default function Analyzer({ health }: { health: Health | null }) {
   const [schemaError, setSchemaError] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<Validation | null>(null);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const analysis = useAnalysis();
   const [error, setError] = useState('');
   const [action, setAction] = useState<'validate' | 'analyze' | null>(null);
   const [progress, setProgress] = useState(0);
@@ -145,7 +147,7 @@ export default function Analyzer({ health }: { health: Health | null }) {
         }}>
           <Upload size={28} aria-hidden="true" />
           <h3>{file ? 'Your dataset is selected' : 'Drop your flow CSV here'}</h3>
-          <p>UTF-8 CSV / up to 5 MiB / up to 50,000 records</p>
+          <p>UTF-8 CSV / up to 5 MiB / up to 10,000 records</p>
           <input ref={input} type="file" accept=".csv,text/csv" aria-label="Traffic CSV file" disabled={busy} tabIndex={-1} onChange={(event) => choose(event.target.files?.[0])} />
           <button type="button" disabled={busy} onClick={() => input.current?.click()}>{file ? 'Replace file' : 'Browse files'}</button>
         </div>
@@ -187,6 +189,7 @@ export default function Analyzer({ health }: { health: Health | null }) {
     </div>
 
     {analysis && <Panel title="Model analysis" aside={<span className="tag">Actual model output / {analysis.model_version}</span>}>
+      <p>Results are linked across <Link to="/command-center">Command Center</Link>, <Link to="/network-pulse">Network Pulse</Link>, <Link to="/threat-investigation">Threat Investigation</Link>, and <Link to="/reports">Reports</Link> for this browser tab.</p>
       <div className="analysis-summary" role="status"><div><span>Source file</span><strong>{analysis.filename}</strong></div><div><span>Analyzed records</span><strong>{analysis.total_flows.toLocaleString()}</strong></div><div><span>Decision threshold</span><strong>{(analysis.threshold * 100).toFixed(1)}%</strong></div><div><span>Malicious classifications</span><strong className="analysis-anomalous">{analysis.counts.malicious.toLocaleString()}</strong></div></div>
       <div className="analysis-disclaimer"><strong>UNSW-NB15 benchmark output</strong><span>{analysis.message} The score is {analysis.score_definition}.</span></div>
       <div className="analysis-result-actions"><button type="button" className="primary" onClick={() => { try { downloadAnalysis(analysis); setDownloadNotice('CSV export requested.'); } catch { setDownloadNotice('Could not prepare the prediction export.'); } }}><Download size={16} /> Export predictions CSV</button>{downloadNotice && <span role="status">{downloadNotice}</span>}</div>

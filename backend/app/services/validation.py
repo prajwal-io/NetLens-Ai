@@ -29,7 +29,16 @@ def parse_traffic_csv(content: bytes, filename: str) -> tuple[ValidationResponse
         reject("Binary content is not a CSV.")
 
     try:
-        reader = csv.reader(io.StringIO(text), strict=True)
+        # Infer only from the header, so quoted delimiters and short files work.
+        # A dialect is accepted only when it exposes the required model schema.
+        header_line = text.splitlines()[0] if text.splitlines() else ''
+        delimiter = ','
+        for candidate in (',', ';', '\t', '|'):
+            candidate_headers = next(csv.reader([header_line], delimiter=candidate, strict=True), [])
+            if set(REQUIRED_COLUMNS).issubset({header.strip() for header in candidate_headers}):
+                delimiter = candidate
+                break
+        reader = csv.reader(io.StringIO(text, newline=''), delimiter=delimiter, strict=True)
         headers = [header.strip() for header in next(reader, [])]
         if not headers or any(not header for header in headers):
             reject("CSV requires nonempty column headers.")

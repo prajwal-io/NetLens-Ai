@@ -6,7 +6,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import joblib
 import numpy as np
@@ -20,16 +20,16 @@ from sklearn.metrics import (
     average_precision_score,
     balanced_accuracy_score,
     f1_score,
-    precision_recall_curve,
     precision_score,
     recall_score,
+    roc_curve,
     roc_auc_score,
 )
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from ml.dataset import DATASET_ROOT, Dataset, load_dataset
+from ml.dataset import DATASET_ROOT, Dataset, OFFICIAL_SPLIT_EXPECTATIONS, SplitExpectation, load_dataset
 from ml.schema import (
     CATEGORICAL_FEATURES,
     DATASET_LICENSE,
@@ -50,6 +50,7 @@ from ml.schema import (
 ARTIFACT_PATH = Path(__file__).resolve().parent / "artifacts" / "netsight-model.joblib"
 FIT_SEED = 42
 VALIDATION_SIZE = 0.20
+MAX_VALIDATION_FALSE_POSITIVE_RATE = 0.05
 
 
 def make_preprocessor(scale_numeric: bool) -> ColumnTransformer:
@@ -112,6 +113,11 @@ def candidate_models(*, forest_trees: int = 140) -> dict[str, Pipeline]:
 
 
 def classification_metrics(actual: np.ndarray, predicted: np.ndarray, scores: np.ndarray) -> dict[str, float]:
+    normal_rows = actual == 0
+    malicious_rows = actual == 1
+    false_positives = int(np.logical_and(normal_rows, predicted == 1).sum())
+    true_negatives = int(np.logical_and(normal_rows, predicted == 0).sum())
+    false_positive_rate = false_positives / max(false_positives + true_negatives, 1)
     return {
         "accuracy": float(accuracy_score(actual, predicted)),
         "balanced_accuracy": float(balanced_accuracy_score(actual, predicted)),
@@ -120,21 +126,45 @@ def classification_metrics(actual: np.ndarray, predicted: np.ndarray, scores: np
         "f1": float(f1_score(actual, predicted, zero_division=0)),
         "average_precision": float(average_precision_score(actual, scores)),
         "roc_auc": float(roc_auc_score(actual, scores)),
+        "false_positive_rate": float(false_positive_rate),
+        "specificity": float(1 - false_positive_rate),
     }
 
 
-def choose_threshold(actual: np.ndarray, scores: np.ndarray) -> tuple[float, dict[str, float]]:
-    """Choose the positive-class F1 threshold on validation data, never on test."""
-    precision, recall, thresholds = precision_recall_curve(actual, scores)
-    if thresholds.size == 0:
-        threshold = 0.5
-    else:
-        f1_values = (2 * precision[:-1] * recall[:-1]) / np.maximum(precision[:-1] + recall[:-1], 1e-12)
-        best = np.flatnonzero(np.isclose(f1_values, np.nanmax(f1_values)))
-        # Prefer better recall among equivalent F1 thresholds; then the threshold
-        # nearest 0.5, all using validation results only.
-        best_index = max(best, key=lambda index: (recall[index], -abs(thresholds[index] - 0.5)))
-        threshold = float(thresholds[best_index])
+def choose_threshold(
+    actual: np.ndarray,
+    scores: np.ndarray,
+    *,
+    maximum_false_positive_rate: float = MAX_VALIDATION_FALSE_POSITIVE_RATE,
+) -> tuple[float, dict[str, float]]:
+    """Maximize malicious recall while meeting the validation false-positive budget."""
+    actual = np.asarray(actual, dtype="int64")
+    scores = np.asarray(scores, dtype="float64")
+    if not 0 <= maximum_false_positive_rate < 1:
+        raise ValueError("maximum_false_positive_rate must be at least 0 and less than 1.")
+    if actual.ndim != 1 or scores.ndim != 1 or actual.size != scores.size or actual.size == 0:
+        raise ValueError("Validation labels and scores must be non-empty one-dimensional arrays of equal length.")
+    if set(np.unique(actual).tolist()) != {0, 1}:
+        raise ValueError("Validation data must contain both binary classes 0 and 1.")
+    if not np.isfinite(scores).all() or (scores < 0).any() or (scores > 1).any():
+        raise ValueError("Validation scores must be finite probabilities between 0 and 1.")
+
+    false_positive_rates, recalls, thresholds = roc_curve(actual, scores, drop_intermediate=False)
+    finite_thresholds = np.isfinite(thresholds)
+    eligible = np.flatnonzero(finite_thresholds & (false_positive_rates <= maximum_false_positive_rate))
+    if eligible.size == 0:
+        best_fpr = float(np.min(false_positive_rates[finite_thresholds]))
+        raise ValueError(
+            f"No validation threshold met the {maximum_false_positive_rate:.1%} false-positive-rate target "
+            f"(best available false-positive rate: {best_fpr:.3f})."
+        )
+    # Within the alert budget, maximize recall; prefer fewer false alerts, then a
+    # higher threshold when the recall is tied.
+    best_index = max(
+        eligible,
+        key=lambda index: (recalls[index], -false_positive_rates[index], thresholds[index]),
+    )
+    threshold = float(thresholds[best_index])
     predicted = (scores >= threshold).astype("int64")
     return threshold, classification_metrics(actual, predicted, scores)
 
@@ -188,8 +218,13 @@ def _grouped_validation_indices(features: pd.DataFrame, labels: pd.Series) -> tu
     }
 
 
-def train(data_dir: Path | None = None, artifact_path: Path = ARTIFACT_PATH) -> dict[str, Any]:
-    dataset: Dataset = load_dataset(data_dir)
+def train(
+    data_dir: Path | None = None,
+    artifact_path: Path = ARTIFACT_PATH,
+    *,
+    expected_splits: Mapping[str, SplitExpectation] = OFFICIAL_SPLIT_EXPECTATIONS,
+) -> dict[str, Any]:
+    dataset: Dataset = load_dataset(data_dir, expected_splits=expected_splits)
     train_indices, validation_indices, signature_stats = _grouped_validation_indices(
         dataset.training_features, dataset.training_labels
     )
@@ -214,7 +249,7 @@ def train(data_dir: Path | None = None, artifact_path: Path = ARTIFACT_PATH) -> 
 
     validation_results: dict[str, dict[str, Any]] = {}
     for name, pipeline in candidate_models().items():
-        print(f"Fitting {name}…", flush=True)
+        print(f"Fitting {name}...", flush=True)
         pipeline.fit(fit_features, fit_labels)
         probabilities = pipeline.predict_proba(validation_features)[:, list(pipeline.classes_).index(1)]
         threshold, metrics = choose_threshold(validation_labels, probabilities)
@@ -228,19 +263,20 @@ def train(data_dir: Path | None = None, artifact_path: Path = ARTIFACT_PATH) -> 
     selected_name = max(
         validation_results,
         key=lambda name: (
-            validation_results[name]["metrics"]["f1"],
             validation_results[name]["metrics"]["recall"],
+            -validation_results[name]["metrics"]["false_positive_rate"],
             validation_results[name]["metrics"]["precision"],
+            validation_results[name]["metrics"]["f1"],
             name == "Random Forest",
         ),
     )
     threshold = float(validation_results[selected_name]["threshold"])
-    print(f"Refitting selected candidate ({selected_name}) on all {len(dataset.training_labels):,} official training rows…", flush=True)
+    print(f"Refitting selected candidate ({selected_name}) on all {len(dataset.training_labels):,} official training rows...", flush=True)
     selected = candidate_models()[selected_name]
     selected.fit(dataset.training_features, dataset.training_labels.to_numpy())
 
     version_suffix = "rf" if selected_name == "Random Forest" else "lr"
-    model_version = f"netsight-{version_suffix}-unsw-v1"
+    model_version = f"netsight-{version_suffix}-unsw-v3"
     fit_counts = dataset.training_labels.value_counts().to_dict()
     train_class_counts = dataset.training_labels.iloc[train_indices].value_counts().to_dict()
     validation_class_counts = dataset.training_labels.iloc[validation_indices].value_counts().to_dict()
@@ -277,6 +313,12 @@ def train(data_dir: Path | None = None, artifact_path: Path = ARTIFACT_PATH) -> 
         "feature_count_categorical": len(CATEGORICAL_FEATURES),
         "excluded_columns": [ID_COLUMN, LABEL_CONTEXT_COLUMN, TARGET_COLUMN],
         "decision_threshold": threshold,
+        "threshold_policy": {
+            "objective": "maximize malicious recall subject to the maximum validation false-positive-rate budget",
+            "maximum_validation_false_positive_rate": MAX_VALIDATION_FALSE_POSITIVE_RATE,
+            "selected_validation_false_positive_rate": validation_results[selected_name]["metrics"]["false_positive_rate"],
+            "selected_validation_recall": validation_results[selected_name]["metrics"]["recall"],
+        },
         "score_definition": "predict_proba for the malicious class; an uncalibrated benchmark score, not attack confidence",
         "preprocessing": {
             "numeric_missing_values": "training-fitted median imputation",
@@ -333,7 +375,13 @@ def train(data_dir: Path | None = None, artifact_path: Path = ARTIFACT_PATH) -> 
         "metadata": info,
     }
     atomic_save(artifact, artifact_path, info)
-    print(f"Selected {selected_name} by validation F1={validation_results[selected_name]['metrics']['f1']:.3f}.", flush=True)
+    selected_metrics = validation_results[selected_name]["metrics"]
+    print(
+        f"Selected {selected_name} by validation recall={selected_metrics['recall']:.3f} "
+        f"at false-positive rate={selected_metrics['false_positive_rate']:.3f} "
+        f"(maximum {MAX_VALIDATION_FALSE_POSITIVE_RATE:.0%}).",
+        flush=True,
+    )
     print("The official test partition has not been used for model or threshold selection.", flush=True)
     print(f"Trained artifact saved to {artifact_path.resolve()} ({artifact_path.stat().st_size:,} bytes).", flush=True)
     return artifact

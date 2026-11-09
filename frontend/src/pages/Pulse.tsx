@@ -1,3 +1,5 @@
+import { useAnalysis } from '../services/analysis';
+import { AnalysisWorkspace } from '../components/AnalysisWorkspace';
 import { useEffect, useRef, useState } from 'react';
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import { NetworkMap } from '../components/NetworkMap';
@@ -22,7 +24,7 @@ function formatPosition(seconds: number) {
   return `00:${String(value).padStart(2, '0')}`;
 }
 
-export default function Pulse() {
+function SamplePulse() {
   const [elapsed, setElapsed] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof speeds)[number]>(1);
@@ -125,4 +127,9 @@ export default function Pulse() {
       <p className="fine">Conceptual topology only. Device links are illustrative and are not derived from an uploaded dataset.</p>
     </Panel>
   </>;
+}
+
+export default function Pulse() {
+ const analysis = useAnalysis();
+ return analysis ? <AnalysisWorkspace analysis={analysis} mode="Network Pulse" /> : <SamplePulse />;
 }

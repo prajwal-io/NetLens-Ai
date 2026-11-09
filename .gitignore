@@ -15,3 +15,7 @@ backend/.pytest-workspace-qa/
 /data/raw/unsw-nb15/
 /backend/ml/artifacts/
 *.joblib.tmp
+/data/qa/
+/data/recent-flows.zip
+.publish-*.json
+.server-*.log

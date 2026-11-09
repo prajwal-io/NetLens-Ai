@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import pandas as pd
+from starlette.concurrency import run_in_threadpool
 from uuid import uuid4
 
 from app.core.config import settings
@@ -34,45 +35,50 @@ async def read_csv_upload(file: UploadFile) -> bytes:
 async def validate(file: UploadFile = File(...)):
     try:
         content = await read_csv_upload(file)
-        return validate_csv(content, file.filename or "traffic.csv")
+        return await run_in_threadpool(validate_csv, content, file.filename or "traffic.csv")
     finally:
         await file.close()
+
+def analyze_csv(content: bytes, filename: str) -> AnalysisResponse:
+    """Parse, predict, and build the bounded response away from the event loop."""
+    validation, rows = parse_traffic_csv(content, filename)
+    features = pd.DataFrame.from_records(rows, columns=FEATURE_COLUMNS)
+    labels, scores, metadata, threshold = model_service.predict(features)
+    normal = int((labels == 0).sum())
+    malicious = int((labels == 1).sum())
+    predictions = [
+        {
+            "row_id": index + 1,
+            "label": "malicious" if int(label) == 1 else "normal",
+            "malicious_score": float(score),
+        }
+        for index, (label, score) in enumerate(zip(labels, scores))
+    ]
+    preview = [
+        {
+            **predictions[index],
+            "features": rows[index],
+        }
+        for index in range(min(5, len(rows)))
+    ]
+    return AnalysisResponse(
+        analysis_id=uuid4().hex,
+        filename=validation.filename,
+        model_version=str(metadata["model_version"]),
+        threshold=threshold,
+        total_flows=validation.row_count,
+        counts={"normal": normal, "malicious": malicious},
+        predictions=predictions,
+        preview=preview,
+        score_definition=str(metadata["score_definition"]),
+        message="The model classifies compatible flow features against the UNSW-NB15 benchmark label. A malicious label is a review signal, not proof of an incident.",
+    )
+
 
 @router.post("/traffic/analyze", response_model=AnalysisResponse)
 async def analyze(file: UploadFile = File(...)):
     try:
         content = await read_csv_upload(file)
-        validation, rows = parse_traffic_csv(content, file.filename or "traffic.csv")
-        features = pd.DataFrame.from_records(rows, columns=FEATURE_COLUMNS)
-        labels, scores, metadata, threshold = model_service.predict(features)
-        normal = int((labels == 0).sum())
-        malicious = int((labels == 1).sum())
-        predictions = [
-            {
-                "row_id": index + 1,
-                "label": "malicious" if int(label) == 1 else "normal",
-                "malicious_score": float(score),
-            }
-            for index, (label, score) in enumerate(zip(labels, scores))
-        ]
-        preview = [
-            {
-                **predictions[index],
-                "features": rows[index],
-            }
-            for index in range(min(5, len(rows)))
-        ]
-        return AnalysisResponse(
-            analysis_id=uuid4().hex,
-            filename=validation.filename,
-            model_version=str(metadata["model_version"]),
-            threshold=threshold,
-            total_flows=validation.row_count,
-            counts={"normal": normal, "malicious": malicious},
-            predictions=predictions,
-            preview=preview,
-            score_definition=str(metadata["score_definition"]),
-            message="The model classifies compatible flow features against the UNSW-NB15 benchmark label. A malicious label is a review signal, not proof of an incident.",
-        )
+        return await run_in_threadpool(analyze_csv, content, file.filename or "traffic.csv")
     finally:
         await file.close()

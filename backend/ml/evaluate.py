@@ -5,20 +5,25 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.metrics import confusion_matrix
 
-from ml.dataset import DATASET_ROOT, load_dataset
+from ml.dataset import DATASET_ROOT, OFFICIAL_SPLIT_EXPECTATIONS, SplitExpectation, load_dataset
 from ml.schema import FEATURE_COLUMNS
 from ml.train import ARTIFACT_PATH, atomic_save, classification_metrics, sha256_file
 
 
-def evaluate(data_dir: Path | None = None, artifact_path: Path = ARTIFACT_PATH) -> dict[str, Any]:
-    dataset = load_dataset(data_dir)
+def evaluate(
+    data_dir: Path | None = None,
+    artifact_path: Path = ARTIFACT_PATH,
+    *,
+    expected_splits: Mapping[str, SplitExpectation] = OFFICIAL_SPLIT_EXPECTATIONS,
+) -> dict[str, Any]:
+    dataset = load_dataset(data_dir, expected_splits=expected_splits)
     artifact = joblib.load(artifact_path)
     metadata = artifact.get("metadata")
     if not isinstance(metadata, dict):

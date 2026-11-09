@@ -1,20 +1,26 @@
-"""Download pinned UNSW-NB15 benchmark split files for academic research."""
+"""Download and transactionally install the pinned UNSW-NB15 CSV splits."""
 
 from __future__ import annotations
 
-import csv
-import hashlib
 import json
+import os
+import shutil
+import tempfile
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable, Sequence
 
-from ml.dataset import DATASET_ROOT
+from ml.dataset import (
+    DATASET_ROOT,
+    OFFICIAL_SPLIT_EXPECTATIONS,
+    SplitExpectation,
+    verify_split_file,
+)
 from ml.schema import (
     DATASET_SOURCE,
-    EXPECTED_TEST_ROWS,
-    EXPECTED_TRAIN_ROWS,
     MIRROR_COMMIT,
     MIRROR_SOURCE,
     REMOTE_TESTING_CONTENT,
@@ -24,85 +30,139 @@ from ml.schema import (
 )
 
 
-def _download(name: str, destination: Path) -> None:
-    url = f"https://media.githubusercontent.com/media/jamshaid120/UNSW_NB15-Complete-dataset/{MIRROR_COMMIT}/{name}"
+@dataclass(frozen=True)
+class DownloadSpec:
+    remote_filename: str
+    local_filename: str
+    expectation: SplitExpectation
+
+
+# The mirror reverses the UNSW filenames. Checksums bind each remote object to
+# its canonical local role, so swapping the files cannot silently relabel data.
+OFFICIAL_DOWNLOAD_SPECS = (
+    DownloadSpec(REMOTE_TRAINING_CONTENT, TRAINING_FILENAME, OFFICIAL_SPLIT_EXPECTATIONS[TRAINING_FILENAME]),
+    DownloadSpec(REMOTE_TESTING_CONTENT, TEST_FILENAME, OFFICIAL_SPLIT_EXPECTATIONS[TEST_FILENAME]),
+)
+MANIFEST_FILENAME = "download-manifest.json"
+
+
+def _download(
+    remote_filename: str,
+    destination: Path,
+    *,
+    mirror_commit: str,
+    open_url: Callable[..., Any],
+) -> None:
+    url = f"https://media.githubusercontent.com/media/jamshaid120/UNSW_NB15-Complete-dataset/{mirror_commit}/{remote_filename}"
     request = urllib.request.Request(url, headers={"User-Agent": "NetSight-AI academic dataset setup"})
     temporary = destination.with_suffix(destination.suffix + ".part")
     try:
-        with urllib.request.urlopen(request, timeout=120) as response, temporary.open("wb") as output:
+        with open_url(request, timeout=120) as response, temporary.open("wb") as output:
             if response.status != 200:
-                raise RuntimeError(f"Dataset download returned HTTP {response.status} for {name}.")
+                raise RuntimeError(f"Dataset download returned HTTP {response.status} for {remote_filename}.")
             while chunk := response.read(1024 * 1024):
                 output.write(chunk)
-        temporary.replace(destination)
+        os.replace(temporary, destination)
     except (OSError, urllib.error.URLError) as exc:
         temporary.unlink(missing_ok=True)
-        raise RuntimeError(f"Could not download {name}: {exc}") from exc
+        raise RuntimeError(f"Could not download {remote_filename}: {exc}") from exc
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
-def _csv_rows(path: Path) -> int:
+def _promote_staged_files(staging_root: Path, destination_root: Path, filenames: Sequence[str]) -> None:
+    """Install a fully validated set, restoring the previous set on failure."""
+    destination_root.mkdir(parents=True, exist_ok=True)
+    backup_root = Path(tempfile.mkdtemp(prefix=f".{destination_root.name}-backup-", dir=destination_root.parent))
+    backed_up: list[str] = []
+    installed: list[str] = []
     try:
-        with path.open("r", encoding="utf-8-sig", newline="") as stream:
-            reader = csv.reader(stream)
-            header = next(reader, None)
-            if not header or "label" not in header:
-                raise ValueError(f"Downloaded file {path.name} has no label column.")
-            return sum(1 for row in reader if row)
-    except (OSError, UnicodeError, csv.Error) as exc:
-        raise ValueError(f"Downloaded file {path.name} is not a readable CSV: {exc}") from exc
+        for filename in filenames:
+            destination = destination_root / filename
+            if destination.exists():
+                os.replace(destination, backup_root / filename)
+                backed_up.append(filename)
+        for filename in filenames:
+            os.replace(staging_root / filename, destination_root / filename)
+            installed.append(filename)
+    except Exception as exc:
+        for filename in reversed(installed):
+            (destination_root / filename).unlink(missing_ok=True)
+        rollback_complete = True
+        for filename in reversed(backed_up):
+            try:
+                os.replace(backup_root / filename, destination_root / filename)
+            except OSError:
+                rollback_complete = False
+        if not rollback_complete:
+            raise RuntimeError(f"Dataset promotion failed; the previous files remain in {backup_root}.") from exc
+        shutil.rmtree(backup_root, ignore_errors=True)
+        raise
+    else:
+        shutil.rmtree(backup_root, ignore_errors=True)
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def download_dataset(
+    destination_root: Path = DATASET_ROOT,
+    *,
+    specs: Sequence[DownloadSpec] = OFFICIAL_DOWNLOAD_SPECS,
+    open_url: Callable[..., Any] | None = None,
+    mirror_commit: str = MIRROR_COMMIT,
+) -> dict[str, Any]:
+    """Stage and verify both official splits before replacing any active file."""
+    expected_names = {TRAINING_FILENAME, TEST_FILENAME}
+    if len(specs) != 2 or {spec.local_filename for spec in specs} != expected_names:
+        raise ValueError("Download must define exactly one training and one testing split.")
+
+    opener = open_url or urllib.request.urlopen
+    destination_root = destination_root.resolve()
+    destination_root.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix=f".{destination_root.name}-stage-", dir=destination_root.parent) as temporary_dir:
+        staging_root = Path(temporary_dir)
+        manifest_files: dict[str, dict[str, object]] = {}
+
+        for spec in specs:
+            staged_file = staging_root / spec.local_filename
+            _download(spec.remote_filename, staged_file, mirror_commit=mirror_commit, open_url=opener)
+            verified = verify_split_file(staged_file, spec.local_filename.removesuffix(".csv"), spec.expectation)
+            manifest_files[spec.local_filename] = {
+                "mirror_filename": spec.remote_filename,
+                **verified,
+            }
+            print(
+                f"Staged and verified {spec.local_filename}: {verified['rows']:,} rows / "
+                f"SHA-256 {verified['sha256']}",
+                flush=True,
+            )
+
+        manifest: dict[str, Any] = {
+            "dataset": "UNSW-NB15",
+            "dataset_source": DATASET_SOURCE,
+            "mirror_source": MIRROR_SOURCE,
+            "mirror_commit": mirror_commit,
+            "downloaded_at": datetime.now(timezone.utc).isoformat(),
+            "files": manifest_files,
+            "note": "Mirror filenames are reversed; pinned hashes and canonical row counts verify local split roles.",
+        }
+        manifest_path = staging_root / MANIFEST_FILENAME
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+        _promote_staged_files(
+            staging_root,
+            destination_root,
+            (TRAINING_FILENAME, TEST_FILENAME, MANIFEST_FILENAME),
+        )
+
+    print(f"Dataset ready at {destination_root}")
+    print("Academic use only; cite the original UNSW-NB15 papers listed in data/README.md.")
+    return manifest
 
 
 def main() -> None:
-    DATASET_ROOT.mkdir(parents=True, exist_ok=True)
-    print("Downloading pinned UNSW-NB15 split files…", flush=True)
-    # The public mirror labels the two standard CSV files in reverse. Check the
-    # canonical row counts and normalize names so downstream code never relies
-    # on the mirror's swapped filenames.
-    sources = (
-        (REMOTE_TRAINING_CONTENT, TRAINING_FILENAME, EXPECTED_TRAIN_ROWS),
-        (REMOTE_TESTING_CONTENT, TEST_FILENAME, EXPECTED_TEST_ROWS),
-    )
-    manifest_files: dict[str, dict[str, object]] = {}
-    for remote_name, local_name, expected_rows in sources:
-        target = DATASET_ROOT / local_name
-        _download(remote_name, target)
-        rows = _csv_rows(target)
-        if rows != expected_rows:
-            target.unlink(missing_ok=True)
-            raise ValueError(
-                f"Expected {expected_rows:,} records in {local_name}, found {rows:,}. "
-                "The pinned mirror content does not match the canonical UNSW split."
-            )
-        digest = _sha256(target)
-        manifest_files[local_name] = {
-            "mirror_filename": remote_name,
-            "rows": rows,
-            "bytes": target.stat().st_size,
-            "sha256": digest,
-        }
-        print(f"Verified {local_name}: {rows:,} rows / SHA-256 {digest}", flush=True)
-
-    manifest = {
-        "dataset": "UNSW-NB15",
-        "dataset_source": DATASET_SOURCE,
-        "mirror_source": MIRROR_SOURCE,
-        "mirror_commit": MIRROR_COMMIT,
-        "downloaded_at": datetime.now(timezone.utc).isoformat(),
-        "files": manifest_files,
-        "note": "Mirror filenames were reversed; local names were normalized by canonical row count.",
-    }
-    manifest_path = DATASET_ROOT / "download-manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"Dataset ready at {DATASET_ROOT.resolve()}")
-    print("Academic use only; cite the original UNSW-NB15 papers listed in data/README.md.")
+    print("Downloading pinned UNSW-NB15 split files to a temporary staging directory...", flush=True)
+    download_dataset()
 
 
 if __name__ == "__main__":

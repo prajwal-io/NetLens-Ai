@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useReducedMotion } from 'motion/react';
+import { useLocation } from 'react-router-dom';
 import { isBoolean, usePageVisibility, usePreference } from '../hooks/preferences';
 
 type Stream = {
@@ -14,30 +15,36 @@ type Stream = {
 // Sparse packet-like values keep the background tied to network telemetry.
 // They are decorative marks, not live network data.
 const streams: Stream[] = [
-  { side: 'left', offset: '2%', tone: 'blue', duration: '31s', delay: '-18s', tokens: ['01', '4F', 'A2', '7C', '·', '02', 'B1', '30'] },
-  { side: 'left', offset: '6%', tone: 'red', duration: '36s', delay: '-7s', tokens: ['ACK', '10', '·', 'F3', '21', '0A', '·', '02'] },
-  { side: 'left', offset: '11%', tone: 'blue', duration: '34s', delay: '-28s', tokens: ['08', '2D', '90', '·', 'C4', '01', '1E', '72'] },
-  { side: 'left', offset: '16%', tone: 'blue', duration: '39s', delay: '-12s', tokens: ['7F', '03', 'B8', '11', '·', 'A0', '24', '09'] },
-  { side: 'right', offset: '2%', tone: 'blue', duration: '35s', delay: '-25s', tokens: ['3E', '04', '·', 'C1', '0D', '8A', '21', '·'] },
-  { side: 'right', offset: '6%', tone: 'red', duration: '32s', delay: '-4s', tokens: ['SYN', '0A', '31', '·', '92', 'F0', '12', '03'] },
-  { side: 'right', offset: '11%', tone: 'blue', duration: '38s', delay: '-20s', tokens: ['04', 'B2', '17', '·', 'A8', '02', '60', '1C'] },
-  { side: 'right', offset: '16%', tone: 'blue', duration: '33s', delay: '-10s', tokens: ['2B', '·', '01', 'E7', '44', '09', '·', '30'] },
+  { side: 'left', offset: '1.5%', tone: 'blue', duration: '31s', delay: '-18s', tokens: ['01', '4F', 'A2', '7C', '·', '02', 'B1', '30'] },
+  { side: 'left', offset: '4.5%', tone: 'red', duration: '36s', delay: '-7s', tokens: ['ACK', '10', '·', 'F3', '21', '0A', '·', '02'] },
+  { side: 'left', offset: '7.5%', tone: 'blue', duration: '34s', delay: '-28s', tokens: ['08', '2D', '90', '·', 'C4', '01', '1E', '72'] },
+  { side: 'left', offset: '10.5%', tone: 'blue', duration: '39s', delay: '-12s', tokens: ['7F', '03', 'B8', '11', '·', 'A0', '24', '09'] },
+  { side: 'right', offset: '1.5%', tone: 'blue', duration: '35s', delay: '-25s', tokens: ['3E', '04', '·', 'C1', '0D', '8A', '21', '·'] },
+  { side: 'right', offset: '4.5%', tone: 'red', duration: '32s', delay: '-4s', tokens: ['SYN', '0A', '31', '·', '92', 'F0', '12', '03'] },
+  { side: 'right', offset: '7.5%', tone: 'blue', duration: '38s', delay: '-20s', tokens: ['04', 'B2', '17', '·', 'A8', '02', '60', '1C'] },
+  { side: 'right', offset: '10.5%', tone: 'blue', duration: '33s', delay: '-10s', tokens: ['2B', '·', '01', 'E7', '44', '09', '·', '30'] },
 ];
+const activeNodeDelays: Record<string, string> = {
+  '45-140': '-1s', '56-400': '-3s', '90-566': '-5s',
+  '46-180': '-2s', '86-378': '-4s', '172-628': '-6s',
+};
 
 /** Decorative network topology and telemetry marks. It does not represent live traffic. */
 export function TopologyBackground() {
+  const { pathname } = useLocation();
   const [paused] = usePreference('background-paused', false, isBoolean);
   const visible = usePageVisibility();
   const reduce = useReducedMotion();
   const running = !paused && visible && !reduce;
+  const page = pathname === '/' ? 'landing' : pathname.slice(1).replaceAll('/', '-');
 
   return (
-    <div className="topology-background" data-running={running} aria-hidden="true">
+    <div className="topology-background" data-running={running} data-page={page} aria-hidden="true">
       <svg className="topology-edge topology-left" viewBox="0 0 320 900" fill="none">
         <defs>
           <linearGradient id="edge-fade" x1="0" y1="0" x2="320" y2="0" gradientUnits="userSpaceOnUse">
-            <stop stopColor="white" stopOpacity=".72" />
-            <stop offset=".28" stopColor="white" stopOpacity=".14" />
+            <stop stopColor="white" stopOpacity=".9" />
+            <stop offset=".38" stopColor="white" stopOpacity=".34" />
             <stop offset="1" stopColor="white" stopOpacity="0" />
           </linearGradient>
           <mask id="topology-mask"><rect width="320" height="900" fill="url(#edge-fade)" /></mask>
@@ -54,9 +61,9 @@ export function TopologyBackground() {
             <path d="M-10 810H22Q46 810 46 786V744Q46 720 70 720H138Q162 720 162 696V670H290" />
             <path d="M70 190H112Q136 190 136 166V106H290M56 370H110Q134 370 134 346V312" />
           </g>
-          <path d="M-10 530H52Q76 530 76 506V470H126" stroke="var(--signal-red)" strokeWidth="1" strokeOpacity=".52" />
+          <path className="topology-route-alert" d="M-10 530H52Q76 530 76 506V470H126" stroke="var(--signal-red)" strokeWidth="1" strokeOpacity=".52" />
           {[[45, 140], [70, 212], [154, 236], [178, 338], [32, 310], [56, 400], [126, 424], [150, 490], [42, 650], [90, 566], [188, 542], [46, 786], [138, 720], [136, 166]].map(([x, y]) => (
-            <g key={`${x}-${y}`}><circle cx={x} cy={y} r="3.5" fill="var(--paper)" stroke="var(--signal-blue)" strokeOpacity=".92" /><circle cx={x} cy={y} r="1" fill="var(--signal-blue)" fillOpacity=".9" /></g>
+            <g key={`${x}-${y}`}>{activeNodeDelays[`${x}-${y}`] && <circle className="topology-node-pulse" style={{ animationDelay: activeNodeDelays[`${x}-${y}`] }} cx={x} cy={y} r="8" /> }<circle cx={x} cy={y} r="3.5" fill="var(--paper)" stroke="var(--signal-blue)" strokeOpacity=".92" /><circle cx={x} cy={y} r="1" fill="var(--signal-blue)" fillOpacity=".9" /></g>
           ))}
           <path className="edge-signal" d="M-20 140H45Q70 140 70 165V212Q70 236 94 236H154Q178 236 178 260V338H304" stroke="var(--signal-blue)" strokeWidth="1.6" pathLength="100" />
         </g>
@@ -71,9 +78,9 @@ export function TopologyBackground() {
             <path d="M-20 740H50Q74 740 74 716V652Q74 628 98 628H172Q196 628 196 604V566H312" />
             <path d="M70 222H118Q142 222 142 198V120H280" />
           </g>
-          <path d="M-10 590H60Q84 590 84 566V528H138" stroke="var(--signal-red)" strokeWidth="1" strokeOpacity=".52" />
+          <path className="topology-route-alert" d="M-10 590H60Q84 590 84 566V528H138" stroke="var(--signal-red)" strokeWidth="1" strokeOpacity=".52" />
           {[[46, 180], [70, 250], [160, 274], [184, 350], [38, 460], [86, 378], [160, 354], [50, 740], [74, 652], [172, 628], [196, 566], [142, 198]].map(([x, y]) => (
-            <circle key={`${x}-${y}`} cx={x} cy={y} r="3.5" fill="var(--paper)" stroke="var(--signal-blue)" strokeOpacity=".92" />
+            <g key={`${x}-${y}`}>{activeNodeDelays[`${x}-${y}`] && <circle className="topology-node-pulse" style={{ animationDelay: activeNodeDelays[`${x}-${y}`] }} cx={x} cy={y} r="8" />}<circle cx={x} cy={y} r="3.5" fill="var(--paper)" stroke="var(--signal-blue)" strokeOpacity=".92" /></g>
           ))}
           <path className="edge-signal edge-signal-delayed" d="M-20 740H50Q74 740 74 716V652Q74 628 98 628H172Q196 628 196 604V566H312" stroke="var(--signal-blue)" strokeWidth="1.6" pathLength="100" />
         </g>

@@ -1,5 +1,8 @@
 import csv
 import io
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import joblib
 import numpy as np
@@ -9,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
-from app.services.model_service import model_service
+from app.services.model_service import ModelService, model_service
 from ml.schema import CATEGORICAL_FEATURES, FEATURE_COLUMNS, NUMERIC_FEATURES
 from ml.train import candidate_models
 
@@ -199,8 +202,95 @@ def test_model_unavailable_returns_503(client, tmp_path, monkeypatch):
         assert model_service.load() is True
 
 
+def test_incomplete_and_invalid_artifacts_fail_closed(client, tmp_path):
+    original = joblib.load(model_service.artifact_path)
+    artifact_path = tmp_path / "invalid-model.joblib"
+    service = ModelService(artifact_path)
+    payloads = [
+        {"format_version": 2},
+        {**original, "features": list(reversed(FEATURE_COLUMNS))},
+        {**original, "metadata": {**original["metadata"], "evaluation": None}},
+        {**original, "threshold": float("nan")},
+        {**original, "pipeline": None},
+    ]
+    for payload in payloads:
+        joblib.dump(payload, artifact_path)
+        assert service.load() is False
+        assert service.loaded is False
+        assert service.load_error
+
+    artifact_path.write_bytes(b"not a joblib artifact")
+    assert service.load() is False
+    assert service.loaded is False
+    assert service.load_error
+
+
+def test_invalid_model_artifact_makes_analysis_unavailable(client, tmp_path, monkeypatch):
+    artifact_path = tmp_path / "invalid-model.joblib"
+    artifact_path.write_bytes(b"invalid artifact")
+    monkeypatch.setattr(model_service, "artifact_path", artifact_path)
+    assert model_service.load() is False
+    assert client.get("/api/v1/health").json()["model_loaded"] is False
+    assert upload(client, _csv([_row(0, 0)]), endpoint="analyze").status_code == 503
+
+
+def test_concurrent_inference_uses_worker_threads(client, monkeypatch):
+    original_predict = model_service.predict
+    guard = threading.Lock()
+    active = 0
+    max_active = 0
+    caller_thread = threading.get_ident()
+    worker_threads: set[int] = set()
+
+    def delayed_predict(features):
+        nonlocal active, max_active
+        thread_id = threading.get_ident()
+        with guard:
+            active += 1
+            max_active = max(max_active, active)
+            worker_threads.add(thread_id)
+        try:
+            time.sleep(0.12)
+            return original_predict(features)
+        finally:
+            with guard:
+                active -= 1
+
+    monkeypatch.setattr(model_service, "predict", delayed_predict)
+    content = _csv([_row(0, 0), _row(1, 1)])
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        responses = list(executor.map(lambda _: upload(client, content, endpoint="analyze"), range(4)))
+
+    assert all(response.status_code == 200 for response in responses)
+    assert max_active >= 2
+    assert worker_threads
+    assert caller_thread not in worker_threads
+
+
 def test_cors(client):
     response = client.options("/api/v1/traffic/validate", headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"})
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
     response = client.options("/api/v1/traffic/validate", headers={"Origin": "https://untrusted.example", "Access-Control-Request-Method": "POST"})
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize('delimiter', [',', ';', '\t', '|'])
+@pytest.mark.parametrize('bom', [False, True])
+def test_utf8_csv_dialects_and_quoted_fields(client, delimiter, bom):
+    columns = list(reversed(FEATURE_COLUMNS)) + ['note']
+    row = _row(0, 0)
+    row['note'] = 'Unicode café; comma, tab\t pipe| and a quoted "value"\nsecond line'
+    stream = io.StringIO(newline='')
+    writer = csv.DictWriter(stream, fieldnames=columns, delimiter=delimiter)
+    writer.writeheader()
+    writer.writerow({column: row[column] for column in columns})
+    content = stream.getvalue().encode('utf-8-sig' if bom else 'utf-8')
+    assert upload(client, content).status_code == 200
+    assert upload(client, content, endpoint='analyze').json()['total_flows'] == 1
+
+
+def test_ragged_rows_rejected_before_inference(client):
+    content = _csv([_row(0, 0)]).rstrip() + b',extra\n'
+    response = upload(client, content, endpoint='analyze')
+    assert response.status_code == 422
+    assert 'column count' in response.json()['error']['message']

@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_path: Path = Path(__file__).resolve().parents[2] / "data" / "netsight.db"
     model_artifact_path: Path = Path(__file__).resolve().parents[2] / "ml" / "artifacts" / "netsight-model.joblib"
     max_upload_bytes: int = 5 * 1024 * 1024
-    max_rows: int = 50000
+    # Bound prediction payloads as well as server work; callers can submit several files.
+    max_rows: int = 10000
 
 settings = Settings()

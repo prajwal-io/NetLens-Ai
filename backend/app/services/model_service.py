@@ -61,15 +61,39 @@ class ModelService:
                 metadata = artifact.get("metadata")
                 pipeline = artifact.get("pipeline")
                 threshold = artifact.get("threshold")
-                if not isinstance(metadata, dict) or metadata.get("evaluation") is None:
+                evaluation = metadata.get("evaluation") if isinstance(metadata, dict) else None
+                if not isinstance(metadata, dict) or not isinstance(evaluation, dict):
                     raise ValueError("The model has not completed held-out evaluation.")
-                if not isinstance(metadata.get("model_version"), str) or not callable(getattr(pipeline, "predict_proba", None)):
-                    raise ValueError("The model artifact is missing its version or probability output.")
-                if not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
+                if not isinstance(metadata.get("model_version"), str) or not metadata["model_version"].strip():
+                    raise ValueError("The model artifact is missing its version.")
+                if tuple(metadata.get("features", ())) != FEATURE_COLUMNS:
+                    raise ValueError("Model metadata feature order does not match UNSW-NB15 flow schema v1.")
+                if not isinstance(evaluation.get("metrics"), dict) or evaluation.get("rows", 0) < 1:
+                    raise ValueError("The model artifact contains incomplete held-out evaluation metadata.")
+                if not callable(getattr(pipeline, "predict_proba", None)):
+                    raise ValueError("The model artifact is missing its probability pipeline.")
+                if not isinstance(threshold, (int, float)) or not np.isfinite(threshold) or not 0 <= threshold <= 1:
                     raise ValueError("The model artifact contains an invalid classification threshold.")
+                if "decision_threshold" in metadata and float(metadata["decision_threshold"]) != float(threshold):
+                    raise ValueError("Model metadata threshold does not match the saved decision threshold.")
                 classes = list(getattr(pipeline, "classes_", []))
                 if 1 not in classes or 0 not in classes:
                     raise ValueError("The model artifact must support both binary classes.")
+                if getattr(pipeline, "n_features_in_", len(FEATURE_COLUMNS)) != len(FEATURE_COLUMNS):
+                    raise ValueError("The model pipeline input width does not match the 42-feature contract.")
+                probe = pd.DataFrame([{
+                    feature: 0.0 if feature in NUMERIC_FEATURES else "-"
+                    for feature in FEATURE_COLUMNS
+                }], columns=FEATURE_COLUMNS)
+                probe_scores = np.asarray(pipeline.predict_proba(probe), dtype=float)
+                if (
+                    probe_scores.shape != (1, len(classes))
+                    or not np.isfinite(probe_scores).all()
+                    or (probe_scores < 0).any()
+                    or (probe_scores > 1).any()
+                    or not np.isclose(probe_scores.sum(axis=1), 1).all()
+                ):
+                    raise ValueError("The saved model returned invalid probabilities for a schema probe.")
                 self._pipeline = pipeline
                 self._metadata = metadata
                 self._threshold = float(threshold)
