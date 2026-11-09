@@ -14,14 +14,15 @@ from sklearn.metrics import confusion_matrix
 
 from ml.dataset import DATASET_ROOT, OFFICIAL_SPLIT_EXPECTATIONS, SplitExpectation, load_dataset
 from ml.schema import FEATURE_COLUMNS
-from ml.train import ARTIFACT_PATH, atomic_save, classification_metrics, sha256_file
+from ml.train import ARTIFACT_PATH, CANDIDATE_ARTIFACT_PATH, atomic_save, classification_metrics, sha256_file
 
 
 def evaluate(
     data_dir: Path | None = None,
-    artifact_path: Path = ARTIFACT_PATH,
+    artifact_path: Path = CANDIDATE_ARTIFACT_PATH,
     *,
     expected_splits: Mapping[str, SplitExpectation] = OFFICIAL_SPLIT_EXPECTATIONS,
+    publish_path: Path | None = None,
 ) -> dict[str, Any]:
     dataset = load_dataset(data_dir, expected_splits=expected_splits)
     artifact = joblib.load(artifact_path)
@@ -95,6 +96,8 @@ def evaluate(
     )
     artifact["metadata"] = metadata
     atomic_save(artifact, artifact_path, metadata)
+    if publish_path is not None and publish_path.resolve() != artifact_path.resolve():
+        atomic_save(artifact, publish_path, metadata)
     summary = {
         "model_version": metadata["model_version"],
         "selected_threshold": threshold,
@@ -110,9 +113,13 @@ def evaluate(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=None, help="Directory containing normalized training.csv and testing.csv.")
-    parser.add_argument("--artifact", type=Path, default=ARTIFACT_PATH, help="Trained joblib artifact path.")
+    parser.add_argument("--artifact", type=Path, default=CANDIDATE_ARTIFACT_PATH, help="Candidate joblib artifact path.")
+    parser.add_argument("--publish-to", type=Path, default=None, help="Install the evaluated pipeline at this path. The default candidate publishes to the API's active path.")
     args = parser.parse_args()
-    evaluate(args.data_dir, args.artifact)
+    publish_path = args.publish_to
+    if publish_path is None and args.artifact.resolve() == CANDIDATE_ARTIFACT_PATH.resolve():
+        publish_path = ARTIFACT_PATH
+    evaluate(args.data_dir, args.artifact, publish_path=publish_path)
 
 
 if __name__ == "__main__":

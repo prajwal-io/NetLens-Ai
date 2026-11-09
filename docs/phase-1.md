@@ -59,3 +59,5 @@ Open the local Vite URL shown in the terminal (normally `http://127.0.0.1:5173`)
 Open **Traffic Analyzer**, choose `data/samples/valid-flows.csv`, validate it, then run analysis. Validation checks the CSV structure; analysis sends up to 10,000 rows to the evaluated local model in a worker thread and returns its actual output. Larger files must be split before upload. If the model artifact is unavailable, analysis returns an error rather than fabricated predictions.
 
 The classifier predicts the binary UNSW-NB15 benchmark label. A malicious result is a signal for review, not proof of an incident. Review [the model evaluation record](model-evaluation.md) for measured test results, overlap caveats, and limitations.
+
+Training stages `backend/ml/artifacts/netsight-candidate.joblib` by default. The default evaluation command publishes it to `netsight-model.joblib` only after successful held-out evaluation. The active API model stays intact if evaluation fails. Restart FastAPI after publication. With a custom `--artifact`, evaluation updates that experiment artifact only unless `--publish-to` is supplied.

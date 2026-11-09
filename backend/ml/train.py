@@ -48,6 +48,7 @@ from ml.schema import (
 
 
 ARTIFACT_PATH = Path(__file__).resolve().parent / "artifacts" / "netsight-model.joblib"
+CANDIDATE_ARTIFACT_PATH = ARTIFACT_PATH.with_name("netsight-candidate.joblib")
 FIT_SEED = 42
 VALIDATION_SIZE = 0.20
 MAX_VALIDATION_FALSE_POSITIVE_RATE = 0.05
@@ -178,6 +179,8 @@ def sha256_file(path: Path) -> str:
 
 
 def atomic_save(artifact: dict[str, Any], artifact_path: Path, info: dict[str, Any]) -> None:
+    # Validate metadata before replacing the authoritative pipeline artifact.
+    serialized_info = json.dumps(info, indent=2, allow_nan=False) + "\n"
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = artifact_path.with_suffix(artifact_path.suffix + ".tmp")
     try:
@@ -185,7 +188,7 @@ def atomic_save(artifact: dict[str, Any], artifact_path: Path, info: dict[str, A
         temporary.replace(artifact_path)
         info_path = artifact_path.with_suffix(".json")
         info_temp = info_path.with_suffix(info_path.suffix + ".tmp")
-        info_temp.write_text(json.dumps(info, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+        info_temp.write_text(serialized_info, encoding="utf-8")
         info_temp.replace(info_path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -220,7 +223,7 @@ def _grouped_validation_indices(features: pd.DataFrame, labels: pd.Series) -> tu
 
 def train(
     data_dir: Path | None = None,
-    artifact_path: Path = ARTIFACT_PATH,
+    artifact_path: Path = CANDIDATE_ARTIFACT_PATH,
     *,
     expected_splits: Mapping[str, SplitExpectation] = OFFICIAL_SPLIT_EXPECTATIONS,
 ) -> dict[str, Any]:
@@ -390,7 +393,7 @@ def train(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=None, help="Directory containing normalized training.csv and testing.csv.")
-    parser.add_argument("--artifact", type=Path, default=ARTIFACT_PATH, help="Output joblib artifact path.")
+    parser.add_argument("--artifact", type=Path, default=CANDIDATE_ARTIFACT_PATH, help="Candidate artifact path; evaluation must finish before publication.")
     args = parser.parse_args()
     train(args.data_dir, args.artifact)
 

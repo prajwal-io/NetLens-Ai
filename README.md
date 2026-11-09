@@ -359,6 +359,8 @@ The complete faculty demonstration should work without depending on internet con
      VISUALIZATION         REPORT EXPORT
 ```
 
+The CSV analysis path is implemented through the stages above. Historical replay input, persistent analysis history, backend report export, and PDF reports remain planned. Actual uploaded classifications are shared across the main workspace pages; topology requires source/destination data. See [the architecture review](docs/architecture-review.md) for the stage-by-stage implementation map.
+
 ### Architecture Principles
 
 1. Separate frontend and backend responsibilities.

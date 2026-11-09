@@ -134,7 +134,11 @@ class ModelService:
 
     def predict(self, features: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, dict[str, Any], float]:
         pipeline, metadata, threshold = self.require_loaded()
-        ordered = features.loc[:, FEATURE_COLUMNS]
+        ordered = features.loc[:, FEATURE_COLUMNS].copy()
+        # The saved sklearn imputers use np.nan as their missing-value marker.
+        # JSON/CSV parsing supplies None; normalize it just as the training loader does.
+        for feature in CATEGORICAL_FEATURES:
+            ordered[feature] = ordered[feature].where(ordered[feature].notna(), np.nan)
         probabilities = np.asarray(pipeline.predict_proba(ordered), dtype=float)
         classes = list(pipeline.classes_)
         positive_index = classes.index(1)

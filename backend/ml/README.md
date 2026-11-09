@@ -40,3 +40,5 @@ Schema `unsw-nb15-flow-v1` contains 42 inputs: 39 numeric features and three cat
 - Metrics include accuracy, balanced accuracy, precision, recall, F1, average precision, ROC-AUC, support, and confusion matrices.
 
 See [`docs/model-evaluation.md`](../../docs/model-evaluation.md) for measured results and interpretation. The benchmark is controlled and does not establish performance on other networks or live traffic.
+
+Training stages `backend/ml/artifacts/netsight-candidate.joblib` by default. The default evaluation command publishes it to `netsight-model.joblib` only after successful held-out evaluation. The active API model stays intact if evaluation fails. Restart FastAPI after publication. With a custom `--artifact`, evaluation updates that experiment artifact only unless `--publish-to` is supplied.

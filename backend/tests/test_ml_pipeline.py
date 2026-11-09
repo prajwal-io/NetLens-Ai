@@ -95,7 +95,17 @@ def test_train_selects_on_grouped_validation_and_evaluate_uses_official_test(tmp
     assert selected_metrics["false_positive_rate"] <= policy["maximum_validation_false_positive_rate"]
     assert policy["selected_validation_recall"] == selected_metrics["recall"]
 
-    metadata = evaluate(tmp_path, artifact_path, expected_splits=expectations)
+    active_path = tmp_path / 'active-model.joblib'
+    active_path.write_bytes(b'previous evaluated pipeline')
+    valid = joblib.load(artifact_path)
+    invalid = {**valid, 'threshold': -1}
+    joblib.dump(invalid, artifact_path)
+    with pytest.raises(ValueError, match='valid probability pipeline or threshold'):
+        evaluate(tmp_path, artifact_path, expected_splits=expectations, publish_path=active_path)
+    assert active_path.read_bytes() == b'previous evaluated pipeline'
+    joblib.dump(valid, artifact_path)
+    metadata = evaluate(tmp_path, artifact_path, expected_splits=expectations, publish_path=active_path)
+    assert joblib.load(active_path)['metadata']['evaluation'] is not None
     assert metadata["evaluation"]["rows"] == 60
     assert metadata["evaluation"]["metrics"]["support"] == {"normal": 30, "malicious": 30}
     assert 0 <= metadata["evaluation"]["metrics"]["f1"] <= 1

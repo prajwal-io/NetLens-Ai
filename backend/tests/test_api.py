@@ -294,3 +294,16 @@ def test_ragged_rows_rejected_before_inference(client):
     response = upload(client, content, endpoint='analyze')
     assert response.status_code == 422
     assert 'column count' in response.json()['error']['message']
+
+
+def test_blank_categories_use_training_fitted_imputation(client):
+    pipeline, _, _ = model_service.require_loaded()
+    modes = pipeline.named_steps['preprocess'].named_transformers_['categorical'].named_steps['imputer'].statistics_
+    blank, filled = _row(0, 0), _row(0, 0)
+    for feature, mode in zip(CATEGORICAL_FEATURES, modes):
+        blank[feature] = ''
+        filled[feature] = mode
+    first = upload(client, _csv([blank]), endpoint='analyze')
+    second = upload(client, _csv([filled]), endpoint='analyze')
+    assert first.status_code == second.status_code == 200
+    assert first.json()['predictions'] == second.json()['predictions']

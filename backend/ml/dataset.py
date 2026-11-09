@@ -105,7 +105,7 @@ def _read_split(path: Path, split_name: str) -> tuple[pd.DataFrame, pd.Series, i
         if too_long:
             raise ValueError(f"{split_name.capitalize()} category {column!r} exceeds 128 characters.")
         missing_values += int(values.isna().sum())
-        features[column] = values.astype(object)
+        features[column] = values.astype(object).where(values.notna(), np.nan)
 
     # Return columns in the same order used by training and inference.
     features = features.loc[:, FEATURE_COLUMNS].reset_index(drop=True)
