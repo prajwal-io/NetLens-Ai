@@ -13,6 +13,7 @@ import pandas as pd
 from sklearn.metrics import confusion_matrix
 
 from ml.dataset import DATASET_ROOT, OFFICIAL_SPLIT_EXPECTATIONS, SplitExpectation, load_dataset
+from ml.full_unsw import DEFAULT_MAX_TRAIN_ROWS, FULL_DATASET_ROOT, load_full_unsw_training
 from ml.schema import FEATURE_COLUMNS
 from ml.train import ARTIFACT_PATH, CANDIDATE_ARTIFACT_PATH, atomic_save, classification_metrics, sha256_file
 
@@ -23,6 +24,7 @@ def evaluate(
     *,
     expected_splits: Mapping[str, SplitExpectation] = OFFICIAL_SPLIT_EXPECTATIONS,
     publish_path: Path | None = None,
+    full_unsw_data_dir: Path = FULL_DATASET_ROOT,
 ) -> dict[str, Any]:
     dataset = load_dataset(data_dir, expected_splits=expected_splits)
     artifact = joblib.load(artifact_path)
@@ -64,7 +66,22 @@ def evaluate(
         }
         return metrics
 
-    all_signature_hashes = pd.util.hash_pandas_object(dataset.training_features.loc[:, FEATURE_COLUMNS], index=False)
+    evaluation_training_features = dataset.training_features
+    supplemental = dataset_metadata.get("supplemental_training")
+    if isinstance(supplemental, dict):
+        max_rows = int(supplemental.get("max_rows", DEFAULT_MAX_TRAIN_ROWS))
+        extra_features, _, extra_stats = load_full_unsw_training(
+            full_unsw_data_dir,
+            heldout_test_features=dataset.test_features,
+            max_rows=max_rows,
+        )
+        if extra_stats.get("file_hashes") != supplemental.get("file_hashes"):
+            raise ValueError("Supplemental UNSW-NB15 files differ from the dataset used to train this model.")
+        if extra_stats.get("rows_used") != supplemental.get("rows_used"):
+            raise ValueError("Supplemental UNSW-NB15 sampling no longer matches the trained model metadata.")
+        evaluation_training_features = pd.concat([evaluation_training_features, extra_features], ignore_index=True)
+
+    all_signature_hashes = pd.util.hash_pandas_object(evaluation_training_features.loc[:, FEATURE_COLUMNS], index=False)
     test_signature_hashes = pd.util.hash_pandas_object(dataset.test_features.loc[:, FEATURE_COLUMNS], index=False)
     training_hashes = set(all_signature_hashes.tolist())
     overlap_mask = test_signature_hashes.isin(training_hashes).to_numpy()
@@ -84,16 +101,21 @@ def evaluate(
         "novel_feature_signature_evaluation": {
             "rows": int(novel_mask.sum()),
             "metrics": novel_report,
-            "definition": "test rows whose 42 input-feature signature does not occur in the official training partition",
+            "definition": "test rows whose 42 input-feature signature does not occur in the selected training pool",
         },
     }
-    metadata["evaluation_warning"] = (
-        "The novelty-aware test subset has low malicious recall; treat the model as experimental and review each result."
-        if novel_report and novel_report["recall"] < 0.5
-        else "Test results include repeated feature signatures from the training partition; review the novelty-aware result before interpreting generalization."
-        if overlap_mask.any()
-        else None
-    )
+    test_fpr = metadata["evaluation"]["metrics"]["false_positive_rate"]
+    validation_fpr_limit = float(metadata.get("threshold_policy", {}).get("maximum_validation_false_positive_rate", 0.05))
+    warnings = []
+    if novel_report and novel_report["recall"] < 0.5:
+        warnings.append("The novelty-aware test subset has low malicious recall.")
+    if test_fpr > validation_fpr_limit:
+        warnings.append(
+            f"Official test false-positive rate ({test_fpr:.1%}) exceeds the validation target ({validation_fpr_limit:.1%}); the validation target is not a guarantee on shifted data."
+        )
+    if overlap_mask.any():
+        warnings.append("Test results include repeated feature signatures from the selected training pool; review the novelty-aware result before interpreting generalization.")
+    metadata["evaluation_warning"] = " ".join(warnings) or None
     artifact["metadata"] = metadata
     atomic_save(artifact, artifact_path, metadata)
     if publish_path is not None and publish_path.resolve() != artifact_path.resolve():
@@ -115,11 +137,12 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, default=None, help="Directory containing normalized training.csv and testing.csv.")
     parser.add_argument("--artifact", type=Path, default=CANDIDATE_ARTIFACT_PATH, help="Candidate joblib artifact path.")
     parser.add_argument("--publish-to", type=Path, default=None, help="Install the evaluated pipeline at this path. The default candidate publishes to the API's active path.")
+    parser.add_argument("--full-unsw-data-dir", type=Path, default=FULL_DATASET_ROOT, help="Directory containing the four checksum-pinned full-corpus CSVs when the candidate used them.")
     args = parser.parse_args()
     publish_path = args.publish_to
     if publish_path is None and args.artifact.resolve() == CANDIDATE_ARTIFACT_PATH.resolve():
         publish_path = ARTIFACT_PATH
-    evaluate(args.data_dir, args.artifact, publish_path=publish_path)
+    evaluate(args.data_dir, args.artifact, publish_path=publish_path, full_unsw_data_dir=args.full_unsw_data_dir)
 
 
 if __name__ == "__main__":

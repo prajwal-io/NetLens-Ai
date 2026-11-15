@@ -12,7 +12,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -30,6 +30,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from ml.dataset import DATASET_ROOT, Dataset, OFFICIAL_SPLIT_EXPECTATIONS, SplitExpectation, load_dataset
+from ml.full_unsw import DEFAULT_MAX_TRAIN_ROWS, FULL_DATASET_ROOT, load_full_unsw_training
 from ml.schema import (
     CATEGORICAL_FEATURES,
     DATASET_LICENSE,
@@ -76,7 +77,7 @@ def make_preprocessor(scale_numeric: bool) -> ColumnTransformer:
     )
 
 
-def candidate_models(*, forest_trees: int = 140) -> dict[str, Pipeline]:
+def candidate_models(*, forest_trees: int = 140, extra_trees: int = 180) -> dict[str, Pipeline]:
     """Candidates share fitted preprocessing and use imbalance-aware weights."""
     return {
         "Random Forest": Pipeline(
@@ -90,6 +91,23 @@ def candidate_models(*, forest_trees: int = 140) -> dict[str, Pipeline]:
                         min_samples_leaf=2,
                         max_features="sqrt",
                         class_weight="balanced_subsample",
+                        random_state=FIT_SEED,
+                        n_jobs=-1,
+                    ),
+                ),
+            ]
+        ),
+        "Extra Trees": Pipeline(
+            [
+                ("preprocess", make_preprocessor(scale_numeric=False)),
+                (
+                    "classifier",
+                    ExtraTreesClassifier(
+                        n_estimators=extra_trees,
+                        max_depth=20,
+                        min_samples_leaf=2,
+                        max_features="sqrt",
+                        class_weight="balanced",
                         random_state=FIT_SEED,
                         n_jobs=-1,
                     ),
@@ -221,25 +239,69 @@ def _grouped_validation_indices(features: pd.DataFrame, labels: pd.Series) -> tu
     }
 
 
+def _source_anchored_validation_indices(
+    official_features: pd.DataFrame,
+    official_labels: pd.Series,
+    pooled_features: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
+    """Validate on official-source rows and exclude their signatures from pooled fit data."""
+    _, official_validation_indices, stats = _grouped_validation_indices(official_features, official_labels)
+    official_signatures = pd.util.hash_pandas_object(official_features.loc[:, FEATURE_COLUMNS], index=False).to_numpy()
+    pooled_signatures = pd.util.hash_pandas_object(pooled_features.loc[:, FEATURE_COLUMNS], index=False).to_numpy()
+    validation_signatures = np.unique(official_signatures[official_validation_indices])
+    validation_group_mask = np.isin(pooled_signatures, validation_signatures)
+    official_membership = np.zeros(len(pooled_features), dtype=bool)
+    official_membership[: len(official_features)] = True
+    validation_membership = validation_group_mask & official_membership
+    fit_membership = ~validation_group_mask
+    stats["supplemental_validation_signature_rows_excluded_from_fit"] = int(
+        (validation_group_mask & ~official_membership).sum()
+    )
+    return np.flatnonzero(fit_membership), np.flatnonzero(validation_membership), stats
+
+
 def train(
     data_dir: Path | None = None,
     artifact_path: Path = CANDIDATE_ARTIFACT_PATH,
     *,
     expected_splits: Mapping[str, SplitExpectation] = OFFICIAL_SPLIT_EXPECTATIONS,
+    include_full_unsw: bool = False,
+    full_unsw_data_dir: Path = FULL_DATASET_ROOT,
+    full_unsw_max_rows: int = DEFAULT_MAX_TRAIN_ROWS,
 ) -> dict[str, Any]:
     dataset: Dataset = load_dataset(data_dir, expected_splits=expected_splits)
-    train_indices, validation_indices, signature_stats = _grouped_validation_indices(
-        dataset.training_features, dataset.training_labels
-    )
-    fit_features = dataset.training_features.iloc[train_indices]
-    fit_labels = dataset.training_labels.iloc[train_indices].to_numpy()
-    validation_features = dataset.training_features.iloc[validation_indices]
-    validation_labels = dataset.training_labels.iloc[validation_indices].to_numpy()
+    training_features = dataset.training_features.copy()
+    training_labels = dataset.training_labels.copy()
+    supplemental_stats: dict[str, Any] | None = None
+    if include_full_unsw:
+        supplemental_features, supplemental_labels, supplemental_stats = load_full_unsw_training(
+            full_unsw_data_dir,
+            heldout_test_features=dataset.test_features,
+            max_rows=full_unsw_max_rows,
+        )
+        training_features = pd.concat([training_features, supplemental_features], ignore_index=True)
+        training_labels = pd.concat([training_labels, supplemental_labels], ignore_index=True)
+
+    if supplemental_stats:
+        train_indices, validation_indices, signature_stats = _source_anchored_validation_indices(
+            dataset.training_features,
+            dataset.training_labels,
+            training_features,
+        )
+    else:
+        train_indices, validation_indices, signature_stats = _grouped_validation_indices(
+            training_features, training_labels
+        )
+    fit_features = training_features.iloc[train_indices]
+    fit_labels = training_labels.iloc[train_indices].to_numpy()
+    validation_features = training_features.iloc[validation_indices]
+    validation_labels = training_labels.iloc[validation_indices].to_numpy()
     if np.unique(fit_labels).size != 2 or np.unique(validation_labels).size != 2:
         raise ValueError("Training and validation partitions must each contain normal and malicious records.")
 
     print(
         f"UNSW-NB15: {len(dataset.training_labels):,} official training rows; "
+        f"{len(training_features) - len(dataset.training_labels):,} additional training rows; "
         f"{len(dataset.test_labels):,} separate test rows.",
         flush=True,
     )
@@ -248,7 +310,14 @@ def train(
         f"{signature_stats['repeated_feature_signatures']:,} repeated signatures kept together.",
         flush=True,
     )
-    print(f"Feature contract: {len(NUMERIC_FEATURES)} numeric + {len(CATEGORICAL_FEATURES)} categorical; ID and attack_cat excluded.", flush=True)
+    print(f"Feature contract: {len(NUMERIC_FEATURES)} numeric + {len(CATEGORICAL_FEATURES)} categorical; identifiers and attack categories excluded.", flush=True)
+    if supplemental_stats:
+        print(
+            f"Full-corpus filter: removed {supplemental_stats['duplicate_boundary_rows_removed']:,} exact adjacent-file duplicate records and "
+            f"{supplemental_stats['rows_matching_heldout_test_removed']:,} held-out feature matches; "
+            f"sampled {supplemental_stats['rows_used']:,} of {supplemental_stats['eligible_rows_after_test_filter']:,} eligible rows.",
+            flush=True,
+        )
 
     validation_results: dict[str, dict[str, Any]] = {}
     for name, pipeline in candidate_models().items():
@@ -258,7 +327,7 @@ def train(
         threshold, metrics = choose_threshold(validation_labels, probabilities)
         validation_results[name] = {"threshold": threshold, "metrics": metrics}
         print(
-            f"{name}: validation F1={metrics['f1']:.3f}, recall={metrics['recall']:.3f}, "
+            f"{name}: validation FPR={metrics['false_positive_rate']:.3f}, recall={metrics['recall']:.3f}, "
             f"precision={metrics['precision']:.3f}, threshold={threshold:.3f}.",
             flush=True,
         )
@@ -274,15 +343,16 @@ def train(
         ),
     )
     threshold = float(validation_results[selected_name]["threshold"])
-    print(f"Refitting selected candidate ({selected_name}) on all {len(dataset.training_labels):,} official training rows...", flush=True)
+    print(f"Refitting selected candidate ({selected_name}) on all {len(training_features):,} selected training rows...", flush=True)
     selected = candidate_models()[selected_name]
-    selected.fit(dataset.training_features, dataset.training_labels.to_numpy())
+    selected.fit(training_features, training_labels.to_numpy())
 
-    version_suffix = "rf" if selected_name == "Random Forest" else "lr"
-    model_version = f"netsight-{version_suffix}-unsw-v3"
-    fit_counts = dataset.training_labels.value_counts().to_dict()
-    train_class_counts = dataset.training_labels.iloc[train_indices].value_counts().to_dict()
-    validation_class_counts = dataset.training_labels.iloc[validation_indices].value_counts().to_dict()
+    version_suffix = {"Random Forest": "rf", "Extra Trees": "et", "Logistic Regression": "lr"}[selected_name]
+    corpus_suffix = "-full" if supplemental_stats else ""
+    model_version = f"netsight-{version_suffix}-unsw{corpus_suffix}-v4"
+    fit_counts = training_labels.value_counts().to_dict()
+    train_class_counts = training_labels.iloc[train_indices].value_counts().to_dict()
+    validation_class_counts = training_labels.iloc[validation_indices].value_counts().to_dict()
     info: dict[str, Any] = {
         "model_name": selected_name,
         "model_version": model_version,
@@ -293,8 +363,11 @@ def train(
             "mirror": MIRROR_SOURCE,
             "mirror_commit": MIRROR_COMMIT,
             "license": DATASET_LICENSE,
-            "rows": int(len(dataset.training_labels) + len(dataset.test_labels)),
-            "training_rows": int(len(dataset.training_labels)),
+            "rows": int(len(training_labels) + len(dataset.test_labels)),
+            "training_rows": int(len(training_labels)),
+            "official_training_rows": int(len(dataset.training_labels)),
+            "supplemental_training_rows": int(len(training_labels) - len(dataset.training_labels)),
+            "supplemental_training": supplemental_stats,
             "test_rows": int(len(dataset.test_labels)),
             "training_file": dataset.training_path.name,
             "test_file": dataset.test_path.name,
@@ -328,17 +401,21 @@ def train(
             "categorical_missing_values": "training-fitted most-frequent imputation",
             "categorical_encoding": "one-hot with unknown categories ignored",
             "missing_values_found": {
-                "training": int(dataset.train_missing_values),
+                "training": int(dataset.train_missing_values + training_features.isna().sum().sum() - dataset.training_features.isna().sum().sum()),
                 "test": int(dataset.test_missing_values),
             },
         },
         "split": {
-            "strategy": "grouped stratified 80/20 validation split inside the official training partition; official test kept untouched",
+            "strategy": (
+                "grouped stratified validation split from official training rows; supplemental rows sharing validation signatures excluded from fit; official test kept untouched"
+                if supplemental_stats
+                else "grouped stratified 80/20 validation split inside the official training partition; official test kept untouched"
+            ),
             "random_state": FIT_SEED,
             "train_rows": int(len(train_indices)),
             "validation_rows": int(len(validation_indices)),
             "test_rows": int(len(dataset.test_labels)),
-            "fitted_rows": int(len(dataset.training_labels)),
+            "fitted_rows": int(len(training_labels)),
             "feature_signature_groups": signature_stats,
         },
         "class_counts": {
@@ -394,8 +471,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=None, help="Directory containing normalized training.csv and testing.csv.")
     parser.add_argument("--artifact", type=Path, default=CANDIDATE_ARTIFACT_PATH, help="Candidate artifact path; evaluation must finish before publication.")
+    parser.add_argument("--include-full-unsw", action="store_true", help="Add a reproducible sample from the pinned 2.54M-row full UNSW-NB15 corpus.")
+    parser.add_argument("--full-unsw-data-dir", type=Path, default=FULL_DATASET_ROOT, help="Directory containing the four checksum-pinned full-corpus CSVs.")
+    parser.add_argument("--full-unsw-max-rows", type=int, default=DEFAULT_MAX_TRAIN_ROWS, help=f"Maximum supplemental rows after held-out-signature filtering (default: {DEFAULT_MAX_TRAIN_ROWS:,}).")
     args = parser.parse_args()
-    train(args.data_dir, args.artifact)
+    train(
+        args.data_dir,
+        args.artifact,
+        include_full_unsw=args.include_full_unsw,
+        full_unsw_data_dir=args.full_unsw_data_dir,
+        full_unsw_max_rows=args.full_unsw_max_rows,
+    )
 
 
 if __name__ == "__main__":

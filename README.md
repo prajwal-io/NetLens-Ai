@@ -392,15 +392,11 @@ The input contract has 42 flow features (39 numeric and `proto`, `service`, `sta
 
 Multiclass attack classification may be introduced later if the model produces satisfactory evaluation results.
 
-### Proposed Algorithm
+### Implemented Model Candidates
 
-**Primary:** Random Forest Classifier
+The training command compares Random Forest, Extra Trees, and Logistic Regression using grouped validation data. Each candidate's threshold is selected to maximize malicious recall while keeping validation false-positive rate at or below 5%. The selected candidate is then refitted on the recorded training pool; the official test split is kept for final reporting only.
 
-**Baseline:** Logistic Regression
-
-Random Forest is selected because it works well with many structured tabular datasets and can represent nonlinear feature relationships.
-
-Its performance must still be evaluated on the chosen traffic dataset.
+The official held-out result remains materially worse on false positives than the validation target, so a candidate is not evidence of reliable live detection. See [`docs/model-evaluation.md`](docs/model-evaluation.md) and [`docs/full-unsw-training.md`](docs/full-unsw-training.md) for metrics, limits, and the optional expanded-corpus workflow.
 
 ### ML Pipeline
 
@@ -702,6 +698,7 @@ netsight-ai/
 |-- docs/
 |   |-- architecture.md
 |   |-- model-evaluation.md
+|   |-- full-unsw-training.md
 |   |-- faculty-demo.md
 ```
 
@@ -774,11 +771,16 @@ macOS/Linux:
 source .venv/bin/activate
 ```
 
-Install dependencies:
+Install the locked backend dependencies from `backend/`:
 
-```bash
-python -m pip install fastapi "uvicorn[standard]" python-multipart pydantic pandas numpy scikit-learn joblib
+```powershell
+python -m pip install -r requirements.lock.txt
+python -m ml.download_dataset
+python -m ml.train
+python -m ml.evaluate
 ```
+
+The optional 2.54-million-row UNSW corpus workflow is documented in [`docs/full-unsw-training.md`](docs/full-unsw-training.md). Raw datasets and trained artifacts remain local and are not committed.
 
 Once `backend/app/main.py` has been implemented with a FastAPI instance named `app`, start the server:
 
@@ -798,7 +800,7 @@ API documentation:
 
 `http://127.0.0.1:8000/docs`
 
-These commands describe the initial development setup. The source files, endpoints, and ML model must still be implemented.
+Start the local API from `backend/` with `uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`.
 
 ---
 

@@ -1,6 +1,21 @@
 # UNSW-NB15 model evaluation
 
-## Result summary
+## Controlled candidate comparison — November 15, 2026
+
+Both runs use the same updated training code, compare Random Forest, Extra Trees, and Logistic Regression, select thresholds from grouped validation data at a maximum 5% false-positive rate, and evaluate on the same untouched official test split. The expanded run adds 500,000 rows sampled from the full UNSW-NB15 corpus. Its validation slice is anchored to the canonical training source; supplemental rows matching those validation signatures are excluded from fitting.
+
+| Run | Training rows | Selected model / threshold | Validation recall / FPR | Official test false alerts / FPR | Test recall | Test precision |
+|---|---:|---|---:|---:|---:|---:|
+| Canonical only | 175,341 | Random Forest / 0.5307 | 95.2% / 5.0% | 6,135 / 16.58% | 96.85% | 87.74% |
+| Canonical + full-corpus sample | 675,341 | Random Forest / 0.7568 | 96.1% / 5.0% | 5,065 / 13.69% | 95.72% | 89.55% |
+
+The expanded candidate produces 1,070 fewer false alerts on the 37,000 normal test flows (17.4% fewer; 2.89 percentage points lower FPR), while test recall falls by 1.13 percentage points. On the 73,800-row unseen-feature-signature subset, FPR is 13.06% and recall is 94.96%. The validation ceiling still does not transfer to the official test: its 13.69% FPR is 2.7 times the 5% target. This remains an experimental benchmark model.
+
+The full-corpus loader removed three exact duplicate records at adjacent CSV boundaries and 1,430 supplemental rows matching official test feature signatures, then sampled 500,000 of 2,538,614 eligible rows. A first pooled-validation iteration on the same added rows selected a threshold of 0.0777 and raised 15,654 false alerts (42.31% FPR) despite 100% test recall. It was rejected; threshold selection is now anchored to the canonical training source. Neither candidate was published to the active API model.
+
+The comparison is still limited to one benchmark family and one official split. It does not establish lower alert workload on a separate network or in live operations. The highest-priority follow-up is a separately collected, compatible normal-traffic calibration set for threshold selection; the current 13.69% held-out FPR shows that a 5% in-source validation target is insufficient.
+
+## Prior canonical-only baseline (v3)
 
 The source trains on the canonical UNSW-NB15 partitions and evaluates the final pipeline on the untouched official test split. The generated model and raw dataset are local artifacts and are intentionally excluded from Git. The evaluated version is `netsight-rf-unsw-v3`.
 
@@ -67,7 +82,7 @@ Confusion matrix, rows actual and columns predicted: `[[29,792, 5,736], [1,410, 
 2. Validate the binary target and exact feature schema. Exclude `id`, `label`, and `attack_cat` from model input.
 3. Fit numeric median imputation, categorical most-frequent imputation, and one-hot encoding inside each candidate pipeline.
 4. Make a seeded stratified validation split inside the official training partition while keeping identical feature signatures together.
-5. Compare Random Forest and Logistic Regression. Select each model's threshold to maximize malicious recall subject to validation false-positive rate no higher than 5%; choose the candidate with higher recall, then lower false-positive rate. The untouched official test split is only used to report the resulting tradeoff.
+5. Compare Random Forest, Extra Trees, and Logistic Regression. Select each model's threshold to maximize malicious recall subject to validation false-positive rate no higher than 5%; choose the candidate with higher recall, then lower false-positive rate. When full-corpus training is enabled, validate on grouped canonical-source rows and exclude matching supplemental signatures from the fit. The untouched official test split is only used to report the resulting tradeoff.
 6. Refit the selected model and preprocessing pipeline on all official training data.
 7. Evaluate once on the untouched official test partition and record the result in the model metadata.
 

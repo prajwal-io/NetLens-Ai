@@ -43,6 +43,8 @@ export interface EvaluationMetrics {
   f1: number;
   average_precision: number;
   roc_auc: number;
+  false_positive_rate: number;
+  specificity: number;
   support: { normal: number; malicious: number };
   confusion_matrix: { labels: string[]; rows_actual_columns_predicted: number[][] };
 }
@@ -50,7 +52,7 @@ export interface ModelInfo {
   model_name: string;
   model_version: string;
   algorithm: string;
-  dataset: { name: string; source: string; mirror: string; mirror_commit: string; license: string; rows: number; training_rows: number; test_rows: number; training_file: string; test_file: string; training_sha256: string; test_sha256: string };
+  dataset: { name: string; source: string; mirror: string; mirror_commit: string; license: string; rows: number; training_rows: number; official_training_rows: number; supplemental_training_rows: number; supplemental_training: { raw_rows: number; duplicate_boundary_rows_removed: number; rows_matching_heldout_test_removed: number; eligible_rows_after_test_filter: number; rows_used: number; max_rows: number; selection_seed: number; selection_method: string; mirror_commit: string } | null; test_rows: number; training_file: string; test_file: string; training_sha256: string; test_sha256: string };
   target: { column: string; normal_value: number; malicious_value: number; meaning: string; context_column_excluded: string };
   features: string[];
   numeric_features: string[];
@@ -60,6 +62,7 @@ export interface ModelInfo {
   feature_count_categorical: number;
   excluded_columns: string[];
   decision_threshold: number;
+  threshold_policy: { objective: string; maximum_validation_false_positive_rate: number; selected_validation_false_positive_rate: number; selected_validation_recall: number };
   score_definition: string;
   preprocessing: { numeric_missing_values: string; categorical_missing_values: string; categorical_encoding: string; missing_values_found: { training: number; test: number } };
   split: { strategy: string; random_state: number; train_rows: number; validation_rows: number; test_rows: number; fitted_rows: number; feature_signature_groups: { unique_feature_signatures: number; repeated_feature_signatures: number; conflicting_feature_signatures: number } };
@@ -122,7 +125,7 @@ function upload<T>(path: string, file: File, validate: (body: unknown) => T, opt
 
 function isModelInfo(body: any): body is ModelInfo {
   const metrics = body?.evaluation?.metrics;
-  return !!body && typeof body.model_name === 'string' && typeof body.model_version === 'string' && typeof body.algorithm === 'string' && typeof body.dataset?.name === 'string' && typeof body.dataset?.source === 'string' && Array.isArray(body.features) && Number.isInteger(body.feature_count) && body.features.length === body.feature_count && Array.isArray(body.numeric_features) && Array.isArray(body.categorical_features) && !!metrics && ['accuracy', 'balanced_accuracy', 'precision', 'recall', 'f1', 'average_precision', 'roc_auc'].every((key) => Number.isFinite(metrics[key])) && !!metrics.support && Number.isInteger(metrics.support.normal) && Number.isInteger(metrics.support.malicious) && !!metrics.confusion_matrix && Array.isArray(metrics.confusion_matrix.rows_actual_columns_predicted) && Number.isInteger(body.evaluation?.novel_feature_signature_evaluation?.rows) && Array.isArray(body.limitations);
+  return !!body && typeof body.model_name === 'string' && typeof body.model_version === 'string' && typeof body.algorithm === 'string' && typeof body.dataset?.name === 'string' && typeof body.dataset?.source === 'string' && Array.isArray(body.features) && Number.isInteger(body.feature_count) && body.features.length === body.feature_count && Array.isArray(body.numeric_features) && Array.isArray(body.categorical_features) && !!body.threshold_policy && Number.isFinite(body.threshold_policy.maximum_validation_false_positive_rate) && !!metrics && ['accuracy', 'balanced_accuracy', 'precision', 'recall', 'f1', 'average_precision', 'roc_auc', 'false_positive_rate', 'specificity'].every((key) => Number.isFinite(metrics[key])) && !!metrics.support && Number.isInteger(metrics.support.normal) && Number.isInteger(metrics.support.malicious) && !!metrics.confusion_matrix && Array.isArray(metrics.confusion_matrix.rows_actual_columns_predicted) && Number.isInteger(body.evaluation?.novel_feature_signature_evaluation?.rows) && Array.isArray(body.limitations);
 }
 
 export const api = {

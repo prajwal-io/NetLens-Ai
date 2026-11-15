@@ -80,7 +80,7 @@ def test_train_selects_on_grouped_validation_and_evaluate_uses_official_test(tmp
     expectations = write_splits(tmp_path)
     artifact_path = tmp_path / "artifact" / "model.joblib"
     original_candidates = candidate_models
-    monkeypatch.setattr("ml.train.candidate_models", lambda: original_candidates(forest_trees=8))
+    monkeypatch.setattr("ml.train.candidate_models", lambda: original_candidates(forest_trees=8, extra_trees=8))
 
     artifact = train(tmp_path, artifact_path, expected_splits=expectations)
     assert artifact["format_version"] == 2

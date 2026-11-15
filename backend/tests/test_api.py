@@ -75,6 +75,8 @@ def client(tmp_path, monkeypatch):
                 "f1": 1.0,
                 "average_precision": 1.0,
                 "roc_auc": 1.0,
+                "false_positive_rate": 0.0,
+                "specificity": 1.0,
                 "support": {"normal": 1, "malicious": 1},
                 "confusion_matrix": {"labels": ["normal", "malicious"], "rows_actual_columns_predicted": [[1, 0], [0, 1]]},
             },

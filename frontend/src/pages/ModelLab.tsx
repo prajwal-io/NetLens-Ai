@@ -48,13 +48,20 @@ export default function ModelLab() {
   const metrics = info.evaluation.metrics;
   const candidates = Object.entries(info.validation_candidates);
   const novel = info.evaluation.novel_feature_signature_evaluation;
+  const confusion = metrics.confusion_matrix.rows_actual_columns_predicted;
+  const falseAlerts = confusion[0]?.[1] ?? 0;
+  const normalSupport = metrics.support.normal;
+  const measuredFalsePositiveRate = normalSupport > 0 ? falseAlerts / normalSupport : metrics.false_positive_rate;
+  const validationFalsePositiveCeiling = info.threshold_policy.maximum_validation_false_positive_rate;
+  const ceilingRatio = validationFalsePositiveCeiling > 0 ? measuredFalsePositiveRate / validationFalsePositiveCeiling : 1;
+  const exceededValidationCeiling = measuredFalsePositiveRate > validationFalsePositiveCeiling;
 
   return <>
     <ContextNote>These are measured results on the official UNSW-NB15 test partition. The benchmark includes normal traffic and simulated attack categories; it is not live detection and does not establish performance on other networks.</ContextNote>
     {info.evaluation_warning && <div className="notice model-warning" role="status"><strong>Evaluation caveat:</strong> {info.evaluation_warning}</div>}
     <div className="two-col">
       <Panel title="The model, in context" aside={<span className="tag">Evaluated / {info.model_version}</span>}>
-        <p className="description">A mixed-feature preprocessing pipeline is fitted with each candidate. Random Forest and Logistic Regression are compared on grouped validation data, then the selected candidate is refitted on the official training split.</p>
+        <p className="description">A mixed-feature preprocessing pipeline is fitted with each candidate. Candidates are compared on grouped validation data, then the selected model is refitted on the recorded training pool.</p>
         <DefinitionList items={[
           ['Selected algorithm', info.algorithm],
           ['Comparison baseline', candidates.map(([name]) => name).find((name) => name !== info.algorithm) ?? 'Not evaluated'],
@@ -62,6 +69,7 @@ export default function ModelLab() {
           ['Target column', `${info.target.column} (${info.target.normal_value} normal / ${info.target.malicious_value} attack)`],
           ['Dataset', `${info.dataset.name} / ${info.dataset.rows.toLocaleString()} records`],
           ['Training / test', `${info.dataset.training_rows.toLocaleString()} / ${info.dataset.test_rows.toLocaleString()}`],
+          ['Official / added training', `${info.dataset.official_training_rows.toLocaleString()} / ${info.dataset.supplemental_training_rows.toLocaleString()}`],
           ['Decision threshold', `${(info.decision_threshold * 100).toFixed(1)}%`],
           ['Input schema', `${info.feature_count_numeric} numeric + ${info.feature_count_categorical} categorical`],
         ]}/>
@@ -78,12 +86,28 @@ export default function ModelLab() {
     </div>
 
     <Panel title="Official held-out test" aside={<span className="tag">{info.evaluation.rows.toLocaleString()} rows / benchmark</span>}>
+      <section className={`false-alert-insight ${exceededValidationCeiling ? 'over-ceiling' : 'within-ceiling'}`} aria-labelledby="false-alert-title">
+        <div className="false-alert-copy">
+          <span className="false-alert-kicker">HELD-OUT FALSE ALERT BURDEN</span>
+          <h3 id="false-alert-title">{percent(measuredFalsePositiveRate)} <span>of normal flows flagged</span></h3>
+          <p>{falseAlerts.toLocaleString()} of {normalSupport.toLocaleString()} benchmark-normal flows were labeled malicious at this threshold.</p>
+        </div>
+        <div className="false-alert-context">
+          <div><span>Validation ceiling</span><strong>≤ {percent(validationFalsePositiveCeiling)}</strong></div>
+          <div><span>Held-out result</span><strong className={exceededValidationCeiling ? 'false-alert-over' : ''}>{exceededValidationCeiling ? 'Above ceiling' : 'Within ceiling'}</strong></div>
+          <div className="false-alert-track" role="img" aria-label={`Held-out false-positive rate is ${percent(measuredFalsePositiveRate)}; validation selection ceiling is ${percent(validationFalsePositiveCeiling)}.`}>
+            <span className="false-alert-fill" style={{ width: `${Math.min(100, Math.max(0, ceilingRatio * 100))}%` }}/>
+            <i style={{ left: `${Math.min(100, Math.max(2, ceilingRatio > 0 ? 100 / ceilingRatio : 100))}%` }}/>
+          </div>
+          <small>The validation ceiling is a selection rule, not a promise for held-out or live traffic.</small>
+        </div>
+      </section>
       <div className="evaluation-grid model-metrics">
         {[
           ['Accuracy', metrics.accuracy, 'All labels'],
           ['Precision', metrics.precision, 'Malicious predictions'],
           ['Recall', metrics.recall, 'Malicious records detected'],
-          ['F1-score', metrics.f1, 'Malicious class'],
+          ['False-positive rate', measuredFalsePositiveRate, `${falseAlerts.toLocaleString()} normal flows flagged`],
         ].map(([label, value, detail]) => <div key={String(label)}><h3>{label}</h3><strong>{percent(Number(value))}</strong><p>{detail}</p></div>)}
       </div>
       <p className="fine">Average precision {percent(metrics.average_precision)} / ROC-AUC {percent(metrics.roc_auc)} / balanced accuracy {percent(metrics.balanced_accuracy)}. Review precision and false positives along with recall.</p>
@@ -107,11 +131,11 @@ export default function ModelLab() {
       </Panel>
       <Panel title="Validation candidates" aside={<span className="tag">Selection only</span>}>
         <div className="table-scroll" tabIndex={0} role="region" aria-label="Candidate validation metrics">
-          <table><caption>Validation segment only; the official test results are separate.</caption><thead><tr><th scope="col">Candidate</th><th scope="col">Threshold</th><th scope="col">Precision</th><th scope="col">Recall</th><th scope="col">F1</th></tr></thead>
-            <tbody>{candidates.map(([name, candidate]) => <tr key={name}><th scope="row">{name}{name === info.algorithm ? ' / selected' : ''}</th><td>{(candidate.threshold * 100).toFixed(1)}%</td><td>{percent(candidate.metrics.precision)}</td><td>{percent(candidate.metrics.recall)}</td><td>{percent(candidate.metrics.f1)}</td></tr>)}</tbody>
+          <table><caption>Validation segment only; the official test results are separate.</caption><thead><tr><th scope="col">Candidate</th><th scope="col">Threshold</th><th scope="col">Precision</th><th scope="col">Recall</th><th scope="col">False-positive rate</th></tr></thead>
+            <tbody>{candidates.map(([name, candidate]) => <tr key={name}><th scope="row">{name}{name === info.algorithm ? ' / selected' : ''}</th><td>{(candidate.threshold * 100).toFixed(1)}%</td><td>{percent(candidate.metrics.precision)}</td><td>{percent(candidate.metrics.recall)}</td><td>{percent(candidate.metrics.false_positive_rate)}</td></tr>)}</tbody>
           </table>
         </div>
-        <p className="fine">The selected threshold maximizes malicious-class F1 on validation data. The displayed scores are not calibrated confidence values.</p>
+        <p className="fine">The selected threshold maximizes malicious recall under the {percent(validationFalsePositiveCeiling)} validation false-positive ceiling. The displayed scores are not calibrated confidence values.</p>
       </Panel>
     </div>
 
@@ -139,5 +163,17 @@ export default function ModelLab() {
       <ul className="model-limitations">{info.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
       <p className="fine">A benchmark label is an indication to review the supplied flow features. It does not prove malicious behavior or provide live network monitoring.</p>
     </Panel>
+
+    {info.dataset.supplemental_training && <Panel title="Supplemental training data" aside={<span className="tag">Pinned full corpus</span>}>
+      <p className="description">The fit included a reproducible sample of the full UNSW-NB15 corpus. Exact adjacent-file duplicate records and matching held-out 42-feature signatures were removed before sampling.</p>
+      <DefinitionList items={[
+        ['Rows used', info.dataset.supplemental_training.rows_used.toLocaleString()],
+        ['Duplicate export rows removed', info.dataset.supplemental_training.duplicate_boundary_rows_removed.toLocaleString()],
+        ['Eligible after held-out filtering', info.dataset.supplemental_training.eligible_rows_after_test_filter.toLocaleString()],
+        ['Held-out signature matches removed', info.dataset.supplemental_training.rows_matching_heldout_test_removed.toLocaleString()],
+        ['Sample method', info.dataset.supplemental_training.selection_method],
+        ['Pinned source revision', info.dataset.supplemental_training.mirror_commit],
+      ]}/>
+    </Panel>}
   </>;
 }

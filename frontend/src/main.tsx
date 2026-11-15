@@ -26,6 +26,7 @@ import './quality.css';
 import './completion.css';
 import './theme.css';
 import './background-motion.css';
+import './reliability.css';
 
 const navigation = [
  {path:'/command-center',name:'Command Center',icon:LayoutDashboard},
