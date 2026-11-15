@@ -1,4 +1,4 @@
-﻿# Frontend quality pass: all eight priorities
+# Frontend quality pass: all eight priorities
 
 ## Implemented
 | Priority | Change |

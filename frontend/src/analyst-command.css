@@ -1,0 +1,325 @@
+.workspace-main .page-heading h1 {
+  letter-spacing: -.035em;
+  line-height: 1.08;
+}
+
+.floating-nav a {
+  transition: color 160ms var(--ease-out), background-color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+
+.floating-nav a:hover:not(.active) {
+  transform: translateY(-1px);
+}
+
+.benchmark-evidence {
+  display: grid;
+  grid-template-columns: minmax(230px, 1.15fr) minmax(300px, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  margin: 22px 0 26px;
+  padding: 16px 20px;
+  border-block: 1px solid var(--border);
+  background: rgb(16 23 34 / .78);
+}
+
+.benchmark-copy p {
+  margin: 0 0 5px;
+  color: #afbdd0;
+  font-size: 11px;
+}
+
+.benchmark-copy h2 {
+  max-width: 340px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+  line-height: 1.35;
+}
+
+.benchmark-copy span {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(70px, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+
+.benchmark-metrics dt {
+  color: #a4b1c2;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.benchmark-metrics dd {
+  margin: 6px 0 0;
+  color: #e9eef7;
+  font: 500 21px/1 "Space Grotesk", sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.03em;
+}
+
+.benchmark-metrics .benchmark-false-positive {
+  color: var(--signal-red);
+}
+
+.benchmark-evidence > a,
+.recent-analyses-empty > div a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 40px;
+  color: #a9c8ff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.benchmark-evidence-error {
+  grid-template-columns: 1fr auto;
+  color: #ffc0c5;
+  font-size: 12px;
+}
+
+.benchmark-evidence-error p {
+  margin: 0;
+}
+
+.benchmark-evidence-error button,
+.quiet-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 10px;
+  color: #bdc8d7;
+  font-size: 12px;
+}
+
+.recent-analyses {
+  margin-top: 28px;
+}
+
+.recent-analyses-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.recent-analyses-heading h2 {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+
+.recent-analyses-heading p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.recent-analyses-list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.recent-analyses-list li {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 100px 110px auto;
+  grid-template-areas: "file total alerts open";
+  align-items: center;
+  gap: 18px;
+  min-height: 64px;
+  padding: 10px 8px;
+  border-bottom: 1px solid #263346;
+}
+
+.recent-analysis-file {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  grid-area: file;
+}
+
+.recent-analysis-file strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-analysis-file span,
+.recent-analysis-total span,
+.recent-analysis-alerts span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.recent-analysis-total,
+.recent-analysis-alerts {
+  display: grid;
+  gap: 5px;
+}
+
+.recent-analysis-total { grid-area: total; }
+.recent-analysis-alerts { grid-area: alerts; }
+
+.recent-analysis-total strong,
+.recent-analysis-alerts strong {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.recent-analysis-alerts strong {
+  color: var(--signal-red);
+}
+
+.recent-analyses-list li > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: #a9c8ff;
+  font-size: 12px;
+  grid-area: open;
+}
+
+.recent-analyses-list li > button:hover:not(:disabled) {
+  color: white;
+  background: #172437;
+}
+
+.recent-analyses-state,
+.recent-analyses-error {
+  margin: 0;
+  padding: 16px 8px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recent-analyses-error {
+  color: #ffc0c5;
+}
+
+.recent-analyses-empty {
+  padding: 1px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.recent-analyses-empty .empty {
+  margin: 0;
+  padding: 28px 16px 20px;
+  border: 0;
+  background: transparent;
+}
+
+.recent-analyses-empty > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 0 16px 12px;
+}
+
+.recent-analyses-empty > div:last-child a {
+  justify-content: flex-start;
+}
+
+@media (max-width: 900px) {
+  .benchmark-evidence {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .benchmark-copy {
+    grid-column: 1 / -1;
+  }
+
+  .benchmark-copy h2 {
+    max-width: none;
+  }
+
+  .benchmark-evidence > a {
+    align-self: end;
+  }
+}
+
+@media (max-width: 640px) {
+  .benchmark-evidence {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin: 18px 0 22px;
+    padding: 16px;
+  }
+
+  .benchmark-metrics {
+    gap: 10px;
+  }
+
+  .benchmark-metrics dt {
+    min-height: 31px;
+    font-size: 10px;
+  }
+
+  .benchmark-metrics dd {
+    font-size: 19px;
+  }
+
+  .benchmark-evidence > a {
+    justify-content: flex-start;
+  }
+
+  .recent-analyses-heading {
+    align-items: flex-start;
+  }
+
+  .recent-analyses-list li {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "file file open" "total alerts alerts";
+    gap: 10px 14px;
+    padding: 12px 4px;
+  }
+
+  .recent-analysis-file span {
+    font-size: 10px;
+  }
+
+  .recent-analysis-total,
+  .recent-analysis-alerts {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+  }
+
+  .recent-analyses-list li > button {
+    align-self: start;
+    min-height: 36px;
+    padding: 0 4px 0 8px;
+  }
+
+  .recent-analyses-empty > div:last-child {
+    display: grid;
+    gap: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-nav a { transition: none; }
+  .floating-nav a:hover:not(.active) { transform: none; }
+}

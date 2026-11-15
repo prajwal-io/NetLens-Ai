@@ -24,7 +24,7 @@ New-Item -ItemType Directory -Force data/qa
 backend/.venv/Scripts/python.exe -c "import pandas as pd; pd.read_csv('data/raw/unsw-nb15/testing.csv').sample(n=1000,random_state=2026).to_csv('data/qa/real-heldout.csv',index=False,encoding='utf-8-sig')"
 ```
 
-One successful upload now supplies Command Center, Network Pulse, Threat Investigation, and Reports through one memory store. The active results survive navigation and are cleared on reload or choosing another upload. Reports export actual predictions. Model Lab remains an optional metadata view and is not required to complete an analysis. Raw traffic is not persisted in browser storage. Only the five feature previews returned by the API are available for detailed feature inspection; all classification rows are available in bounded 50-row pages.
+One successful upload now supplies Command Center, Network Pulse, Threat Investigation, and Reports through one memory store. Results survive navigation and reload through a selected analysis ID and SQLite history. Choosing another upload clears only the current selection; older results remain available until deleted. Reports export actual predictions. Model Lab remains an optional metadata view and is not required to complete an analysis. Raw traffic is not persisted in browser storage. Five initial feature previews remain in the inference response; every saved flow can now be inspected through a detail endpoint. All classification rows are available in bounded 50-row pages.
 
 Network Pulse does not invent device addresses, timestamps, or links from the UNSW schema. Until actual source/destination data is provided and preserved, it shows real classification records with an explicit topology limitation.
 

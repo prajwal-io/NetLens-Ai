@@ -1,6 +1,7 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from datetime import datetime, timezone
 
 from ml.schema import SCHEMA_NAME
 
@@ -35,6 +36,9 @@ class Prediction(BaseModel):
     row_id: int
     label: Literal["normal", "malicious"]
     malicious_score: float
+    source: str | None = None
+    destination: str | None = None
+    timestamp: str | None = None
 
 
 class PredictionPreview(Prediction):
@@ -48,7 +52,10 @@ class AnalysisCounts(BaseModel):
 
 class AnalysisResponse(BaseModel):
     analysis_id: str
-    source_type: Literal["uploaded_csv"] = "uploaded_csv"
+    source_type: Literal["uploaded_csv", "historical_replay"] = "uploaded_csv"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    replay_id: str | None = None
+    model_context: dict = Field(default_factory=dict)
     filename: str
     model_version: str
     threshold: float
@@ -58,3 +65,20 @@ class AnalysisResponse(BaseModel):
     preview: list[PredictionPreview]
     score_definition: str
     message: str
+
+
+class AnalysisSummary(BaseModel):
+    analysis_id: str
+    filename: str
+    created_at: str
+    source_type: Literal["uploaded_csv", "historical_replay"]
+    model_version: str
+    total_flows: int
+    counts: AnalysisCounts
+
+
+class AnalysisHistory(BaseModel):
+    items: list[AnalysisSummary]
+    total: int
+    limit: int
+    offset: int

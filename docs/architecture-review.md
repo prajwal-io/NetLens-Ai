@@ -1,6 +1,6 @@
 # README architecture review
 
-The implemented CSV analysis path follows README section 7. The full target architecture also includes planned replay, persistence, and reporting capabilities, so it is not accurate to describe the entire target as complete.
+The implemented CSV analysis path follows README section 7. Replay, persistence, and reporting now follow the same path; their service boundaries are documented below. New dataset support and live packet capture remain outside this release.
 
 | README stage or principle | Application implementation | Assessment |
 |---|---|---|
@@ -13,11 +13,11 @@ The implemented CSV analysis path follows README section 7. The full target arch
 | Normal / malicious classification | Saved validation-selected threshold applied to malicious-class scores | Implemented; scores are uncalibrated benchmark outputs |
 | FastAPI response | Analysis ID, model version, threshold, counts, ordered predictions, five feature previews | Implemented |
 | Dashboard / visualization | Shared analysis state drives Command Center, Network Pulse, Threat Investigation, Reports | Implemented for classification records; actual topology requires address data |
-| Report export | Browser CSV export from actual predictions | Implemented; backend report endpoints and PDF export remain planned |
+| Report export | Saved snapshot -> backend CSV and paginated PDF export | Implemented |
 | Training separate from inference | CLI-only training/evaluation; API only loads and runs the saved pipeline | Implemented |
 | Evaluation before installation | Training stages a candidate; successful evaluation publishes the active pipeline | Corrected during review; failed evaluation preserves active artifact |
-| Historical replay input | Only a clearly labeled conceptual walkthrough exists | Planned API/scenario integration remains incomplete |
-| Persistence / analysis history | SQLite version-state setup and browser validation receipts | Persistent analysis records remain incomplete |
+| Historical replay input | Bundled verified holdout excerpts -> shared inference service -> saved snapshot | Implemented; playback is sequential, not original packet timing |
+| Persistence / analysis history | SQLite snapshots and per-row features; paginated history, restore and cascade delete | Implemented |
 
 ## Straightforward user flow
 
@@ -37,4 +37,6 @@ The held-out false-positive rate remains 16.58%, above the validation budget, an
 
 ## Verification
 
-All 48 backend tests passed after the review fixes, including the real held-out upload/inference test, failed-evaluation preservation of the active artifact, successful evaluated publication, and equivalence between blank categorical inputs and training-fitted mode replacements. One non-blocking Starlette/httpx deprecation warning remains. No new model weights were trained during this review; the existing evaluated active model is preserved.
+All 59 backend tests passed after the completion pass, including the real held-out upload/inference test, failed-evaluation preservation of the active artifact, successful evaluated publication, and equivalence between blank categorical inputs and training-fitted mode replacements. One non-blocking Starlette/httpx deprecation warning remains. No new model weights were trained during this review; the existing evaluated active model is preserved.
+
+The completion pass also passed five runtime checks against the active evaluated model, frontend production build, and Chrome workflow/accessibility checks. See [release evidence and limits](release-completion.md).

@@ -1,3 +1,4 @@
+import { ReplayLibrary } from '../components/ReplayLibrary';
 import { useAnalysis } from '../services/analysis';
 import { AnalysisWorkspace } from '../components/AnalysisWorkspace';
 import { useEffect, useRef, useState } from 'react';
@@ -131,5 +132,5 @@ function SamplePulse() {
 
 export default function Pulse() {
  const analysis = useAnalysis();
- return analysis ? <AnalysisWorkspace analysis={analysis} mode="Network Pulse" /> : <SamplePulse />;
+ return <><ReplayLibrary/>{analysis ? <AnalysisWorkspace key={analysis.analysis_id} analysis={analysis} mode="Network Pulse" /> : <details className="saved-history"><summary>Explore the conceptual network illustration</summary><SamplePulse/></details>}</>;
 }

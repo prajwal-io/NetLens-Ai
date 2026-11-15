@@ -61,3 +61,26 @@ Open **Traffic Analyzer**, choose `data/samples/valid-flows.csv`, validate it, t
 The classifier predicts the binary UNSW-NB15 benchmark label. A malicious result is a signal for review, not proof of an incident. Review [the model evaluation record](model-evaluation.md) for measured test results, overlap caveats, and limitations.
 
 Training stages `backend/ml/artifacts/netsight-candidate.joblib` by default. The default evaluation command publishes it to `netsight-model.joblib` only after successful held-out evaluation. The active API model stays intact if evaluation fails. Restart FastAPI after publication. With a custom `--artifact`, evaluation updates that experiment artifact only unless `--publish-to` is supplied.
+
+
+## Completed workflow and release checks
+
+Uploads and historical replays now save analysis snapshots and per-row validated features in local SQLite. Open **Saved analyses** to restore or delete them. **Network Pulse** can analyze two bundled real benchmark excerpts and play their classifications sequentially. **Reports** exports CSV and PDF from the selected saved analysis. Optional IP/time columns are described in [the API contract](architecture.md).
+
+With the API running, from `backend/`:
+
+```powershell
+python scripts/check_release.py
+python -m pytest tests -q
+```
+
+The runtime check uses bundled real benchmark rows, performs five checks, and deletes its own analysis records. It does not download data or retrain the model.
+
+For browser release checks, run Vite normally, then from `frontend/`:
+
+```powershell
+$env:NETSIGHT_TEST_URL='http://127.0.0.1:5173'
+npm run test:release
+```
+
+The runner uses Chrome on Windows if available; otherwise install Playwright Chromium with `npx playwright install chromium`. `CHROME_PATH` can select an installed Chrome binary. It checks real uploads, restoration, linked views, topology context fixtures, replay controls, exports, mobile layout, offline errors, keyboard navigation, and axe WCAG rules. See [the completion record](release-completion.md).

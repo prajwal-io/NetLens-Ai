@@ -1,21 +1,104 @@
 import { useAnalysis } from '../services/analysis';
 import { AnalysisWorkspace } from '../components/AnalysisWorkspace';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Box, CheckCircle2, FlaskConical } from 'lucide-react';
-import { FlowTable } from '../components/FlowTable';
-import { NetworkMap } from '../components/NetworkMap';
+import { ArrowRight, Box, RefreshCw } from 'lucide-react';
 import { TrafficChart } from '../components/TrafficChart';
 import { DefinitionList } from '../components/WorkspaceDetails';
 import { Empty, Panel, Sample } from '../components/ui';
 import { activity, totals } from '../fixtures/sample';
 import { usePreference } from '../hooks/preferences';
 import { useReceipts } from '../services/receipts';
-import type { Health } from '../services/api';
+import { api, type Health, type HistoryPage, type ModelInfo } from '../services/api';
+import { setAnalysis } from '../services/analysis';
 
 type DashboardSource = 'sample' | 'latest-validation';
 const isDashboardSource = (value: unknown): value is DashboardSource => value === 'sample' || value === 'latest-validation';
 const isRange = (value: unknown): value is string => value === '3 hours' || value === 'Last hour';
+
+function BenchmarkEvidence({ health }: { health: Health | null }) {
+  const [model, setModel] = useState<ModelInfo | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!health?.model_loaded) { setModel(null); setError(''); return; }
+    const controller = new AbortController();
+    void api.modelInfo(controller.signal).then(setModel).catch((reason) => {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Model evaluation is unavailable.');
+    });
+    return () => controller.abort();
+  }, [health?.model_loaded, health?.model_version, attempt]);
+
+  if (!health?.model_loaded) return null;
+  if (error) return <section className="benchmark-evidence benchmark-evidence-error" aria-label="Model evaluation status">
+    <p>{error}</p><button type="button" onClick={() => { setError(''); setAttempt((value) => value + 1); }}><RefreshCw size={14} /> Retry</button>
+  </section>;
+  if (!model?.evaluation?.metrics) return null;
+
+  const metrics = model.evaluation.metrics;
+  const percent = (value: number | undefined) => typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : 'Unavailable';
+  return <section className="benchmark-evidence" aria-labelledby="benchmark-heading">
+    <div className="benchmark-copy">
+      <p>{model.dataset.name} · held-out test</p>
+      <h2 id="benchmark-heading">A benchmark result, not a live-network guarantee.</h2>
+      <span>{model.evaluation.rows.toLocaleString()} labeled flows · threshold {model.evaluation.threshold.toFixed(3)}</span>
+    </div>
+    <dl className="benchmark-metrics">
+      <div><dt>Malicious recall</dt><dd>{percent(metrics.recall)}</dd></div>
+      <div><dt>Precision</dt><dd>{percent(metrics.precision)}</dd></div>
+      <div><dt>False-positive rate</dt><dd className="benchmark-false-positive">{percent(metrics.false_positive_rate)}</dd></div>
+    </dl>
+    <Link to="/model-lab">Review evaluation <ArrowRight size={14} /></Link>
+  </section>;
+}
+
+function RecentAnalyses() {
+  const [history, setHistory] = useState<HistoryPage | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    void api.history(0, controller.signal).then((result) => {
+      setHistory(result); setError('');
+    }).catch((reason) => {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Saved analyses are unavailable.');
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [attempt]);
+
+  async function open(id: string) {
+    setBusy(id); setError('');
+    try { setAnalysis(await api.analysis(id)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not open this analysis.'); }
+    finally { setBusy(''); }
+  }
+
+  return <section className="recent-analyses" aria-labelledby="recent-analyses-heading">
+    <div className="recent-analyses-heading">
+      <div><h2 id="recent-analyses-heading">Recent analyses</h2><p>Saved results from this local workspace.</p></div>
+      <button type="button" className="quiet-button" aria-label="Refresh recent analyses" disabled={loading} onClick={() => setAttempt((value) => value + 1)}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button>
+    </div>
+    {error && <p className="recent-analyses-error" role="alert">{error}</p>}
+    {loading && !history && <p className="recent-analyses-state" role="status">Loading saved analyses…</p>}
+    {!loading && !error && history?.items.length === 0 && <div className="recent-analyses-empty">
+      <Empty title="No saved analyses yet">Upload a compatible flow CSV or run a labeled historical replay. Results will appear here and stay linked across the workspace.</Empty>
+      <div><Link to="/traffic-analyzer">Upload traffic data <ArrowRight size={14} /></Link><Link to="/network-pulse">Explore historical replay <ArrowRight size={14} /></Link></div>
+    </div>}
+    {history?.items.length ? <ul className="recent-analyses-list">
+      {history.items.slice(0, 4).map((item) => <li key={item.analysis_id}>
+        <div className="recent-analysis-file"><strong title={item.filename}>{item.filename}</strong><span>{item.source_type === 'historical_replay' ? 'Historical replay' : 'Uploaded CSV'} · {new Date(item.created_at).toLocaleString()}</span></div>
+        <div className="recent-analysis-total"><span>Flows</span><strong>{item.total_flows.toLocaleString()}</strong></div>
+        <div className="recent-analysis-alerts"><span>Malicious</span><strong>{item.counts.malicious.toLocaleString()}</strong></div>
+        <button type="button" disabled={!!busy} onClick={() => void open(item.analysis_id)}>{busy === item.analysis_id ? 'Opening…' : 'Open'} <ArrowRight size={14} /><span className="sr-only"> {item.filename}</span></button>
+      </li>)}
+    </ul> : null}
+  </section>;
+}
 
 function SampleDashboard({ health }: { health: Health | null }) {
   const { receipts } = useReceipts();
@@ -30,11 +113,9 @@ function SampleDashboard({ health }: { health: Health | null }) {
 
   const chart = window === 'Last hour' ? activity.slice(-4) : activity;
   const samplePercent = totals.normal / (totals.normal + totals.suspicious) * 100;
-  const modelAvailability = health?.model_loaded
-    ? `Loaded / ${health.model_version ?? 'version unavailable'}`
-    : 'Not loaded';
+  const modelAvailability = health?.model_loaded ? 'Loaded' : 'Not loaded';
   const modelAvailabilityNote = health?.model_loaded
-    ? 'Ready for uploaded analysis'
+    ? `${health.model_version ?? 'Version unavailable'} · Ready for uploaded analysis`
     : 'No evaluated model available';
   const metrics: [string, string, string][] = showingSample
     ? [
@@ -74,6 +155,8 @@ function SampleDashboard({ health }: { health: Health | null }) {
       {showingSample ? <Sample /> : <span className="tag">CSV validated</span>}
     </div>
 
+    <BenchmarkEvidence health={health} />
+
     <div className="metrics">
       {metrics.map(([label, value, note]) => <div key={label}>
         <p>{label}</p><strong className={value === 'Unavailable' ? 'metric-unavailable' : undefined}>{value}</strong><small>{note}</small>
@@ -95,15 +178,6 @@ function SampleDashboard({ health }: { health: Health | null }) {
       <p className="fine">The receipt stores metadata only; raw traffic rows are not retained in this browser session.</p>
       <Link className="text-action" to="/traffic-analyzer">Validate another dataset <ArrowRight size={15} /></Link>
     </Panel>}
-
-    <Panel title="Workspace readiness" className="readiness-panel">
-      <div className="readiness">
-        <div><span className={health ? 'status-dot' : 'status-dot offline'} /><span><strong>FastAPI backend</strong><small>{health ? 'Connected to local API' : 'Waiting for connection'}</small></span></div>
-        <div><CheckCircle2 size={17} /><span><strong>CSV validation</strong><small>{latestReceipt ? `${latestReceipt.rows.toLocaleString()} rows in latest receipt` : 'Ready for a compatible flow CSV'}</small></span></div>
-        <div><FlaskConical size={17} /><span><strong>ML pipeline</strong><small>{health?.model_loaded ? `Model ${health.model_version ?? 'loaded'}` : 'No trained model installed'}</small></span></div>
-      </div>
-      <Link className="text-action" to="/traffic-analyzer">Validate a dataset <ArrowRight size={15} /></Link>
-    </Panel>
 
     <div className="dashboard-grid">
       <Panel title="Traffic activity" aside={showingSample
@@ -130,14 +204,8 @@ function SampleDashboard({ health }: { health: Health | null }) {
           : <div className="dashboard-empty"><Empty title="No traffic classes to compare">The uploaded file is validated, but no normal or suspicious labels have been generated.</Empty></div>}
       </Panel>
 
-      <Panel className="records-panel" title={showingSample ? 'Recent sample flows' : 'Uploaded flow records'} aside={showingSample ? <Link to="/threat-investigation">Inspect samples <ArrowRight size={14} /></Link> : <span className="tag">Validation only</span>}>
-        {showingSample
-          ? <FlowTable />
-          : <div className="dashboard-empty"><Empty title="No prediction records">The validation receipt stores only file metadata, not raw rows or classification results. Open Traffic Analyzer to review the current upload preview.</Empty><Link className="quiet-link" to="/traffic-analyzer">Open Traffic Analyzer <ArrowRight size={15} /></Link></div>}
-      </Panel>
-
-      <Panel title="Connection atlas" className="atlas-panel"><NetworkMap compact /></Panel>
     </div>
+    <RecentAnalyses />
   </>;
 }
 

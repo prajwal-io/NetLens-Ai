@@ -1,13 +1,13 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-import pandas as pd
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Response
 from starlette.concurrency import run_in_threadpool
-from uuid import uuid4
 
 from app.core.config import settings
-from app.schemas.traffic import AnalysisResponse, FeatureSchemaResponse, HealthResponse, ValidationResponse
+from app.schemas.traffic import AnalysisResponse, AnalysisHistory, PredictionPreview, FeatureSchemaResponse, HealthResponse, ValidationResponse
 from app.services.model_service import model_service
-from app.services.validation import parse_traffic_csv, validate_csv
-from ml.schema import FEATURE_COLUMNS
+from app.services.validation import validate_csv
+from app.services import history
+from app.services.inference import analyze_csv
+from app.services.reports import csv_report, pdf_report
 
 router = APIRouter(prefix="/api/v1")
 
@@ -39,40 +39,6 @@ async def validate(file: UploadFile = File(...)):
     finally:
         await file.close()
 
-def analyze_csv(content: bytes, filename: str) -> AnalysisResponse:
-    """Parse, predict, and build the bounded response away from the event loop."""
-    validation, rows = parse_traffic_csv(content, filename)
-    features = pd.DataFrame.from_records(rows, columns=FEATURE_COLUMNS)
-    labels, scores, metadata, threshold = model_service.predict(features)
-    normal = int((labels == 0).sum())
-    malicious = int((labels == 1).sum())
-    predictions = [
-        {
-            "row_id": index + 1,
-            "label": "malicious" if int(label) == 1 else "normal",
-            "malicious_score": float(score),
-        }
-        for index, (label, score) in enumerate(zip(labels, scores))
-    ]
-    preview = [
-        {
-            **predictions[index],
-            "features": rows[index],
-        }
-        for index in range(min(5, len(rows)))
-    ]
-    return AnalysisResponse(
-        analysis_id=uuid4().hex,
-        filename=validation.filename,
-        model_version=str(metadata["model_version"]),
-        threshold=threshold,
-        total_flows=validation.row_count,
-        counts={"normal": normal, "malicious": malicious},
-        predictions=predictions,
-        preview=preview,
-        score_definition=str(metadata["score_definition"]),
-        message="The model classifies compatible flow features against the UNSW-NB15 benchmark label. A malicious label is a review signal, not proof of an incident.",
-    )
 
 
 @router.post("/traffic/analyze", response_model=AnalysisResponse)
@@ -82,3 +48,51 @@ async def analyze(file: UploadFile = File(...)):
         return await run_in_threadpool(analyze_csv, content, file.filename or "traffic.csv")
     finally:
         await file.close()
+
+
+@router.get("/analyses", response_model=AnalysisHistory)
+def analyses(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return history.list_analyses(limit, offset)
+
+
+@router.get("/analyses/{analysis_id}", response_model=AnalysisResponse)
+def analysis_detail(analysis_id: str):
+    return history.get(analysis_id)
+
+
+@router.delete("/analyses/{analysis_id}", status_code=204)
+def delete_analysis(analysis_id: str):
+    history.delete(analysis_id)
+    return Response(status_code=204)
+
+
+@router.get("/analyses/{analysis_id}/export.csv")
+def export_csv(analysis_id: str):
+    analysis = history.get(analysis_id)
+    return Response(csv_report(analysis), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="netsight-{analysis.analysis_id}.csv"'})
+
+
+@router.get("/analyses/{analysis_id}/report.pdf")
+def export_pdf(analysis_id: str):
+    analysis = history.get(analysis_id)
+    return Response(pdf_report(analysis), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="netsight-{analysis.analysis_id}.pdf"'})
+
+
+@router.get("/replays")
+def replays():
+    from app.services.replay import list_scenarios
+    return {"items": list_scenarios()}
+
+
+@router.post("/replays/{replay_id}/analyze", response_model=AnalysisResponse)
+def analyze_replay(replay_id: str):
+    from app.services.replay import load_scenario
+    content, scenario = load_scenario(replay_id)
+    return analyze_csv(content, scenario["filename"], "historical_replay", replay_id)
+
+
+@router.get("/analyses/{analysis_id}/flows/{row_id}", response_model=PredictionPreview)
+def flow_detail(analysis_id: str, row_id: int):
+    return history.flow_detail(analysis_id, row_id)

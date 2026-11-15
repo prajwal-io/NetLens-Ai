@@ -200,16 +200,38 @@ select:focus-visible,
 
 .floating-nav a.active,
 .on-landing .floating-nav a:last-child,
-.nav-active-surface,
 .mobile-navigation nav a.active {
   color: #eaf1ff;
   background: #1b2a3e;
+}
+
+.floating-nav a.active {
+  background: transparent;
+}
+
+.floating-nav a {
+  position: relative;
+}
+
+.floating-nav .nav-active-surface {
+  position: absolute;
+  right: 9px;
+  bottom: 0;
+  left: 9px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--signal-blue);
+  pointer-events: none;
 }
 
 .floating-nav a:hover,
 .mobile-navigation nav a:hover {
   color: #f3f6fc;
   background: #1a2636;
+}
+
+.floating-nav a.active:hover {
+  background: transparent;
 }
 
 .landing,

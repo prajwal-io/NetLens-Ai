@@ -76,7 +76,7 @@ def make_preprocessor(scale_numeric: bool) -> ColumnTransformer:
     )
 
 
-def candidate_models(*, forest_trees: int = 140) -> dict[str, Pipeline]:
+def candidate_models(*, forest_trees: int = 260) -> dict[str, Pipeline]:
     """Candidates share fitted preprocessing and use imbalance-aware weights."""
     return {
         "Random Forest": Pipeline(
@@ -86,8 +86,8 @@ def candidate_models(*, forest_trees: int = 140) -> dict[str, Pipeline]:
                     "classifier",
                     RandomForestClassifier(
                         n_estimators=forest_trees,
-                        max_depth=20,
-                        min_samples_leaf=2,
+                        max_depth=24,
+                        min_samples_leaf=1,
                         max_features="sqrt",
                         class_weight="balanced_subsample",
                         random_state=FIT_SEED,
@@ -139,7 +139,7 @@ def choose_threshold(
     maximum_false_positive_rate: float = MAX_VALIDATION_FALSE_POSITIVE_RATE,
 ) -> tuple[float, dict[str, float]]:
     """Maximize malicious recall while meeting the validation false-positive budget."""
-    actual = np.asarray(actual, dtype="int64")
+    actual = np.asarray(actual)
     scores = np.asarray(scores, dtype="float64")
     if not 0 <= maximum_false_positive_rate < 1:
         raise ValueError("maximum_false_positive_rate must be at least 0 and less than 1.")
@@ -279,7 +279,7 @@ def train(
     selected.fit(dataset.training_features, dataset.training_labels.to_numpy())
 
     version_suffix = "rf" if selected_name == "Random Forest" else "lr"
-    model_version = f"netsight-{version_suffix}-unsw-v3"
+    model_version = f"netsight-{version_suffix}-unsw-v4"
     fit_counts = dataset.training_labels.value_counts().to_dict()
     train_class_counts = dataset.training_labels.iloc[train_indices].value_counts().to_dict()
     validation_class_counts = dataset.training_labels.iloc[validation_indices].value_counts().to_dict()

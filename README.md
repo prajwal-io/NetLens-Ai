@@ -359,7 +359,7 @@ The complete faculty demonstration should work without depending on internet con
      VISUALIZATION         REPORT EXPORT
 ```
 
-The CSV analysis path is implemented through the stages above. Historical replay input, persistent analysis history, backend report export, and PDF reports remain planned. Actual uploaded classifications are shared across the main workspace pages; topology requires source/destination data. See [the architecture review](docs/architecture-review.md) for the stage-by-stage implementation map.
+The CSV analysis path, historical replay input, SQLite analysis history, backend CSV export, and PDF reports are implemented through the stages above. Actual classifications are shared across the main workspace pages. Device topology uses optional validated source/destination IP columns; files without these columns do not produce invented relationships. See [the architecture review](docs/architecture-review.md) for the stage-by-stage implementation map.
 
 ### Architecture Principles
 
@@ -1105,7 +1105,7 @@ See [local development setup](docs/phase-1.md), [architecture and API contracts]
 
 To download and retrain the model, from `backend/` run `python -m ml.download_dataset`, `python -m ml.train`, and `python -m ml.evaluate`. The normalized raw CSVs stay under the ignored `data/raw/unsw-nb15/` directory. The trained artifact and metadata are generated under `backend/ml/artifacts/` and are not committed.
 
-Analysis history, stored reports, and replay APIs remain future work. The current Network Pulse walkthrough is conceptual and local; it is not historical replay or live capture.
+Analysis snapshots and per-flow features are saved in SQLite. Historical replay uses bundled, hash-verified official holdout excerpts and the same inference service as uploads. Reports are generated from saved results. Neither replay nor uploaded analysis is live packet capture. See [completion and release checks](docs/release-completion.md).
 
 
 ## Frontend quality update

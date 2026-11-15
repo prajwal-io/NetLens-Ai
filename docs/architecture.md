@@ -1,6 +1,6 @@
 # NetSight AI architecture
 
-React and TypeScript call the FastAPI service through Vite's same-origin `/api` proxy during local development. FastAPI separates routing, response schemas, CSV validation, model loading/inference, configuration, and SQLite initialization. Model training and evaluation run as explicit commands outside the request path.
+React and TypeScript call the FastAPI service through Vite's same-origin `/api` proxy during local development. FastAPI separates routing, response schemas, CSV validation, model loading/inference, configuration, saved history, historical replay, report generation, and SQLite persistence. Model training and evaluation run as explicit commands outside the request path.
 
 ```text
 UNSW-NB15 train/test CSVs
@@ -22,17 +22,17 @@ Publish evaluated active artifact
         |
         +-----------------------------+
                                       |
-User CSV --> React API client --> FastAPI validation
+User CSV or bundled replay --> React API client --> FastAPI validation
                                       |
                                       v
                              Evaluated model inference
                                       |
                                       v
-                         Normal / malicious + score
+                    Normal / malicious + score --> SQLite snapshot
                                       |
                     +-----------------+----------------+
                     v                                  v
-              Dashboard / UI                   Prediction CSV export
+              Dashboard / UI                   Saved CSV / PDF exports
 ```
 
 ## API endpoints
@@ -55,7 +55,7 @@ The API requires the 42 model features defined in [`backend/ml/schema.py`](../ba
 
 Upload requirements: UTF-8 CSV (optional BOM), comma/semicolon/tab/pipe delimiter, unique headers, maximum 5 MiB and 10,000 rows. Numeric values must be finite or blank; categorical values may be blank or at most 128 characters. Blank values are normalized to the saved imputers' missing-value marker and imputed using training-fitted statistics. Extra columns are shown in the validation preview but excluded from inference. In particular, `id`, `attack_cat`, and `label` never enter the classifier. Parsing and prediction run in worker threads.
 
-An analysis response includes a generated ID, uploaded filename, model version, threshold, total/class counts, one row ID/label/score per input row, and feature values for up to five preview rows. The prediction CSV includes labels and scores for all rows without copying raw input features. Uploaded analyses are not persisted.
+An analysis response includes a generated ID, uploaded filename, model version, threshold, total/class counts, one row ID/label/score per input row, and feature values for up to five preview rows. The prediction CSV includes labels and scores for all rows without copying raw input features. Analyses and all validated feature rows are persisted transactionally in SQLite, including the model evaluation context at prediction time. Raw uploaded bytes and ignored extra columns are not retained.
 
 ## Training, inference, and evaluation
 
@@ -69,8 +69,25 @@ Actual scores, confusion matrices, overlap counts, and limitations are recorded 
 
 ## Persistence and boundaries
 
-SQLite initializes application version state. Uploaded rows and inference history are not stored. Browser receipts retain validation metadata only. A shared, in-memory analysis store supplies actual predictions to Command Center, Network Pulse, Threat Investigation, and Reports after upload; reload or selecting another file clears it. Reports export actual classification CSVs. Only five feature previews are returned for inspection; all prediction rows are available with pagination. Model Lab reads evaluation metadata independently and is optional in the upload workflow.
+SQLite stores immutable analysis snapshots and per-flow features in one transaction. Foreign-key deletion removes flow records with their parent analysis. The browser keeps the selected analysis ID only; refresh restores it from the backend. A shared store drives Command Center, Network Pulse, Threat Investigation, and Reports. History summaries are paginated; prediction tables render 50 rows at a time and fetch individual flow features on demand. Model Lab remains an optional metadata view.
 
-The evaluated model and its JSON metadata are generated locally by the ML scripts. Historical replay, saved analysis history, backend report export endpoints, and PDF reports are not implemented. Network Pulse shows actual classifications when an upload is active and an explicitly conceptual walkthrough otherwise. It cannot reconstruct device relationships or time series from a CSV without addresses or timestamps. Neither view is live packet capture.
+Historical replay scenarios are small hash-verified excerpts of the existing official UNSW-NB15 holdout. Uploads and replays call the same validation, ordered features, fitted preprocessing, model, and persistence service. Playback is a sequential demonstration rate, not reconstructed capture timing. Ground-truth labels in the source never enter inference. Replay requests run in FastAPI worker threads.
 
-See [the architecture review](architecture-review.md) for the README-to-code mapping and verified boundaries.
+Optional context is separate from model input: `source_ip` / `src_ip` / `srcip`, `destination_ip` / `dst_ip` / `dstip`, and `timestamp` / `start_time`. Addresses must be valid IPv4 or IPv6. Times must be timezone-aware ISO 8601. Invalid recognized context is rejected, not silently drawn. Only provided source/destination pairs form topology connections. No live capture is implemented.
+
+CSV and PDF endpoints read the saved snapshot, so later model changes cannot change past reports. CSV contains all predictions and available network context; PDF contains dataset/source/time/version/threshold/counts, model context and every classification. PDF generation runs in a worker thread through a synchronous FastAPI route. Reports are generated on demand, not stored as duplicate files.
+
+## Saved workflow endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/analyses?limit=20&offset=0` | Paginated summaries (maximum 100 per page) |
+| GET | `/analyses/{id}` | Restore a saved analysis |
+| GET | `/analyses/{id}/flows/{row_id}` | Classification, context and original validated model features |
+| DELETE | `/analyses/{id}` | Delete a snapshot and its feature records |
+| GET | `/analyses/{id}/export.csv` | Export saved classifications and context |
+| GET | `/analyses/{id}/report.pdf` | Export a paginated PDF |
+| GET | `/replays` | Bundled scenario provenance and descriptions |
+| POST | `/replays/{id}/analyze` | Run the active evaluated model, then save results |
+
+See [release completion](release-completion.md) for checks, local operation and remaining model limitations.

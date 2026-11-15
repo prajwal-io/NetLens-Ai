@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs';
+import fs from 'node:fs';
 import {PNG} from 'pngjs';
 import ImageTracer from 'imagetracerjs';
 const png=PNG.sync.read(fs.readFileSync('public/logo-transparent.png'));

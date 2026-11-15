@@ -19,3 +19,6 @@ backend/.pytest-workspace-qa/
 /data/recent-flows.zip
 .publish-*.json
 .server-*.log
+
+/docs/release-evidence/*.png
+/backend/.pytest-tmp-release*/

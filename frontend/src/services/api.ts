@@ -20,11 +20,17 @@ export interface Prediction {
   row_id: number;
   label: 'normal' | 'malicious';
   malicious_score: number;
+  source?: string | null;
+  destination?: string | null;
+  timestamp?: string | null;
 }
 export interface PredictionPreview extends Prediction { features: Record<string, string | number | null> }
 export interface Analysis {
   analysis_id: string;
-  source_type: 'uploaded_csv';
+  source_type: 'uploaded_csv' | 'historical_replay';
+  created_at: string;
+  replay_id?: string | null;
+  model_context: { dataset?: string; threshold_policy?: { maximum_validation_false_positive_rate: number }; evaluation?: EvaluationMetrics & { false_positive_rate?: number }; limitations?: string[] };
   filename: string;
   model_version: string;
   threshold: number;
@@ -43,6 +49,8 @@ export interface EvaluationMetrics {
   f1: number;
   average_precision: number;
   roc_auc: number;
+  false_positive_rate?: number;
+  specificity?: number;
   support: { normal: number; malicious: number };
   confusion_matrix: { labels: string[]; rows_actual_columns_predicted: number[][] };
 }
@@ -95,7 +103,7 @@ function validationResponse(body: unknown): Validation {
 function analysisResponse(body: unknown): Analysis {
   const result = body as Analysis | null;
   const validFeatureValue = (value: unknown) => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
-  if (!result || typeof result.analysis_id !== 'string' || result.source_type !== 'uploaded_csv' || typeof result.filename !== 'string' || typeof result.model_version !== 'string' || !Number.isFinite(result.threshold) || result.threshold < 0 || result.threshold > 1 || !Number.isInteger(result.total_flows) || result.total_flows < 1 || !result.counts || !Number.isInteger(result.counts.normal) || !Number.isInteger(result.counts.malicious) || result.counts.normal + result.counts.malicious !== result.total_flows || !Array.isArray(result.predictions) || result.predictions.length !== result.total_flows || !result.predictions.every((prediction, index) => prediction && prediction.row_id === index + 1 && (prediction.label === 'normal' || prediction.label === 'malicious') && Number.isFinite(prediction.malicious_score) && prediction.malicious_score >= 0 && prediction.malicious_score <= 1) || !Array.isArray(result.preview) || result.preview.length > Math.min(5, result.total_flows) || !result.preview.every((row) => row && (row.label === 'normal' || row.label === 'malicious') && typeof row.features === 'object' && Object.values(row.features).every(validFeatureValue)) || typeof result.score_definition !== 'string' || typeof result.message !== 'string') {
+  if (!result || typeof result.analysis_id !== 'string' || !['uploaded_csv', 'historical_replay'].includes(result.source_type) || typeof result.filename !== 'string' || typeof result.model_version !== 'string' || !Number.isFinite(result.threshold) || result.threshold < 0 || result.threshold > 1 || !Number.isInteger(result.total_flows) || result.total_flows < 1 || !result.counts || !Number.isInteger(result.counts.normal) || !Number.isInteger(result.counts.malicious) || result.counts.normal + result.counts.malicious !== result.total_flows || !Array.isArray(result.predictions) || result.predictions.length !== result.total_flows || !result.predictions.every((prediction, index) => prediction && prediction.row_id === index + 1 && (prediction.label === 'normal' || prediction.label === 'malicious') && Number.isFinite(prediction.malicious_score) && prediction.malicious_score >= 0 && prediction.malicious_score <= 1) || !Array.isArray(result.preview) || result.preview.length > Math.min(5, result.total_flows) || !result.preview.every((row) => row && (row.label === 'normal' || row.label === 'malicious') && typeof row.features === 'object' && Object.values(row.features).every(validFeatureValue)) || typeof result.score_definition !== 'string' || typeof result.message !== 'string') {
     throw new ApiError('The analysis response was incomplete. Please retry.');
   }
   return result;
@@ -125,7 +133,52 @@ function isModelInfo(body: any): body is ModelInfo {
   return !!body && typeof body.model_name === 'string' && typeof body.model_version === 'string' && typeof body.algorithm === 'string' && typeof body.dataset?.name === 'string' && typeof body.dataset?.source === 'string' && Array.isArray(body.features) && Number.isInteger(body.feature_count) && body.features.length === body.feature_count && Array.isArray(body.numeric_features) && Array.isArray(body.categorical_features) && !!metrics && ['accuracy', 'balanced_accuracy', 'precision', 'recall', 'f1', 'average_precision', 'roc_auc'].every((key) => Number.isFinite(metrics[key])) && !!metrics.support && Number.isInteger(metrics.support.normal) && Number.isInteger(metrics.support.malicious) && !!metrics.confusion_matrix && Array.isArray(metrics.confusion_matrix.rows_actual_columns_predicted) && Number.isInteger(body.evaluation?.novel_feature_signature_evaluation?.rows) && Array.isArray(body.limitations);
 }
 
+
+export interface AnalysisSummary {
+  analysis_id: string; filename: string; created_at: string; source_type: Analysis['source_type'];
+  model_version: string; total_flows: number; counts: Analysis['counts'];
+}
+export interface ReplayScenario { id: string; title: string; description: string; rows: number; dataset: string; timing: string }
+export interface HistoryPage { items: AnalysisSummary[]; total: number; limit: number; offset: number }
+
+async function request(path: string, options: RequestInit = {}) {
+  try {
+    const response = await fetch(base + path, { ...options, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000) });
+    if (response.status === 204) return null;
+    return decode(await response.text(), response.status);
+  } catch (error) {
+    if (error instanceof TypeError) throw new ApiError('Cannot reach NetSight API. Check the backend connection and retry.');
+    if (error instanceof DOMException && error.name === 'TimeoutError') throw new ApiError('The request timed out. Please retry.');
+    throw error;
+  }
+}
+
+export async function downloadReport(id: string, format: 'csv' | 'pdf') {
+  const response = await fetch(`${base}/analyses/${encodeURIComponent(id)}/${format === 'csv' ? 'export.csv' : 'report.pdf'}`, { signal: AbortSignal.timeout(90000) });
+  if (!response.ok) { decode(await response.text(), response.status); return; }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a'); link.href = url; link.download = `netsight-${id}.${format}`;
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const api = {
+  async history(offset = 0, signal?: AbortSignal): Promise<HistoryPage> {
+    const body = await request(`/analyses?limit=10&offset=${offset}`, { signal });
+    if (!body || !Array.isArray(body.items) || !Number.isInteger(body.total)) throw new ApiError('Analysis history was incomplete.');
+    return body;
+  },
+  async analysis(id: string, signal?: AbortSignal): Promise<Analysis> {
+    return analysisResponse(await request(`/analyses/${encodeURIComponent(id)}`, { signal }));
+  },
+  async deleteAnalysis(id: string): Promise<void> { await request(`/analyses/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
+  async replays(signal?: AbortSignal): Promise<ReplayScenario[]> { return (await request('/replays', { signal })).items; },
+  async replay(id: string, signal?: AbortSignal): Promise<Analysis> {
+    return analysisResponse(await request(`/replays/${encodeURIComponent(id)}/analyze`, { method: 'POST', signal }));
+  },
+  async flow(id: string, row: number, signal?: AbortSignal): Promise<PredictionPreview> {
+    return request(`/analyses/${encodeURIComponent(id)}/flows/${row}`, { signal });
+  },
   async health(signal?: AbortSignal): Promise<Health> {
     try {
       const response = await fetch(base + '/health', { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });

@@ -189,14 +189,14 @@ export default function Analyzer({ health }: { health: Health | null }) {
     </div>
 
     {analysis && <Panel title="Model analysis" aside={<span className="tag">Actual model output / {analysis.model_version}</span>}>
-      <p>Results are linked across <Link to="/command-center">Command Center</Link>, <Link to="/network-pulse">Network Pulse</Link>, <Link to="/threat-investigation">Threat Investigation</Link>, and <Link to="/reports">Reports</Link> for this browser tab.</p>
+      <p>Results are linked across <Link to="/command-center">Command Center</Link>, <Link to="/network-pulse">Network Pulse</Link>, <Link to="/threat-investigation">Threat Investigation</Link>, and <Link to="/reports">Reports</Link> and can be reopened from Saved analyses.</p>
       <div className="analysis-summary" role="status"><div><span>Source file</span><strong>{analysis.filename}</strong></div><div><span>Analyzed records</span><strong>{analysis.total_flows.toLocaleString()}</strong></div><div><span>Decision threshold</span><strong>{(analysis.threshold * 100).toFixed(1)}%</strong></div><div><span>Malicious classifications</span><strong className="analysis-anomalous">{analysis.counts.malicious.toLocaleString()}</strong></div></div>
       <div className="analysis-disclaimer"><strong>UNSW-NB15 benchmark output</strong><span>{analysis.message} The score is {analysis.score_definition}.</span></div>
       <div className="analysis-result-actions"><button type="button" className="primary" onClick={() => { try { downloadAnalysis(analysis); setDownloadNotice('CSV export requested.'); } catch { setDownloadNotice('Could not prepare the prediction export.'); } }}><Download size={16} /> Export predictions CSV</button>{downloadNotice && <span role="status">{downloadNotice}</span>}</div>
       {analysis.preview.length
         ? <div className="table-scroll analysis-preview" tabIndex={0} role="region" aria-label="Model prediction preview"><table><caption>First {analysis.preview.length} predictions from {analysis.total_flows.toLocaleString()} records</caption><thead><tr><th scope="col">Row</th>{requiredColumns.map((column) => <th scope="col" key={column}>{column}</th>)}<th scope="col">Prediction</th><th scope="col">Malicious score</th></tr></thead><tbody>{analysis.preview.map((row) => <tr key={row.row_id}><th scope="row">{row.row_id}</th>{requiredColumns.map((column) => <td key={column}>{row.features[column] ?? '—'}</td>)}<td><span className={`label-pill ${row.label === 'malicious' ? 'label-red' : 'label-green'}`}>{row.label}</span></td><td>{(row.malicious_score * 100).toFixed(1)}%</td></tr>)}</tbody></table></div>
         : <Empty title="No preview rows returned">The backend returned a valid analysis summary without preview records.</Empty>}
-      <p className="fine">The download contains model labels and scores for every row. It does not include raw source features, and it is not retained in analysis history.</p>
+      <p className="fine">The download contains model labels and scores for every row. It does not include raw source features, and the analysis is saved in the local SQLite history.</p>
     </Panel>}
 
     <Panel title="Inside your dataset" aside={<span className="tag">{result ? 'Validated input' : 'Awaiting a file'}</span>}>

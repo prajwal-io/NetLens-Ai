@@ -26,7 +26,7 @@ Source: [UNSW-NB15](https://research.unsw.edu.au/projects/unsw-nb15-dataset). It
 
 The goal is binary classification: `label=0` is normal and `label=1` is an attack-labeled benchmark flow. The application displays the positive class as **malicious** to prompt review. That label is not proof of malicious activity.
 
-Schema `unsw-nb15-flow-v1` contains 42 inputs: 39 numeric features and three categorical features (`proto`, `service`, `state`). The direct record identifier `id`, target `label`, and descriptive `attack_cat` are excluded from all model inputs. Additional CSV columns are ignored by validation and inference.
+Schema `unsw-nb15-flow-v1` contains 42 inputs: 39 numeric features and three categorical features (`proto`, `service`, `state`). The direct record identifier `id`, target `label`, and descriptive `attack_cat` are excluded from all model inputs. Additional CSV columns are excluded from model inference. Recognized optional IP/time columns are validated and stored separately for network context.
 
 ## Preprocessing and evaluation safeguards
 

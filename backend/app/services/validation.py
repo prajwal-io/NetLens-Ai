@@ -102,4 +102,6 @@ def parse_traffic_csv(content: bytes, filename: str) -> tuple[ValidationResponse
 
 def validate_csv(content: bytes, filename: str) -> ValidationResponse:
     result, _ = parse_traffic_csv(content, filename)
+    from app.services.flow_metadata import read_metadata
+    read_metadata(content)
     return result

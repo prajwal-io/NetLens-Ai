@@ -1,4 +1,4 @@
-﻿import {chromium} from '@playwright/test';
+import {chromium} from '@playwright/test';
 import assert from 'node:assert/strict';
 const base=process.env.AUDIT_URL||'http://127.0.0.1:4175';
 const browser=await chromium.launch({executablePath:process.env.BROWSER_EXECUTABLE||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
