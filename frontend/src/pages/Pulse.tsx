@@ -80,12 +80,12 @@ function SamplePulse() {
   }
 
   return <>
-    <ContextNote>This is an illustrative local walkthrough, not a historical replay. The current API does not provide replay scenarios; no uploaded traffic, live capture, or ML predictions are represented here.</ContextNote>
-    <Panel title="Illustrative replay preview" aside={<span className="tag">Sample UI data</span>}>
+    <ContextNote>The historical replay above analyzes a bundled UNSW-NB15 excerpt with the active model. This separate walkthrough is conceptual; it does not represent uploaded traffic or live capture.</ContextNote>
+    <Panel title="Conceptual connection walkthrough" aside={<span className="tag">Illustrative topology</span>}>
       <div className="replay-intro">
         <div>
           <h3>Follow a connection path</h3>
-          <p>Use the timeline to step through a conceptual route. Real historical replay can replace this walkthrough when the replay API is available.</p>
+          <p>Use the timeline to step through an example route. Actual benchmark replay is available in the Historical replay panel above.</p>
         </div>
         <span className="replay-source">Local concept fixture</span>
       </div>
@@ -132,5 +132,5 @@ function SamplePulse() {
 
 export default function Pulse() {
  const analysis = useAnalysis();
- return <><ReplayLibrary/>{analysis ? <AnalysisWorkspace key={analysis.analysis_id} analysis={analysis} mode="Network Pulse" /> : <details className="saved-history"><summary>Explore the conceptual network illustration</summary><SamplePulse/></details>}</>;
+ return <><ReplayLibrary/>{analysis ? <AnalysisWorkspace key={analysis.analysis_id} analysis={analysis} mode="Network Pulse" /> : <details className="saved-history"><summary>Explore a conceptual network illustration</summary><SamplePulse/></details>}</>;
 }

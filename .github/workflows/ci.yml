@@ -48,5 +48,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Install Chromium for browser smoke test
+        run: npx playwright install --with-deps chromium
+      - name: Smoke test application routes
+        run: npm run test:smoke
       - name: Build frontend
         run: npm run build

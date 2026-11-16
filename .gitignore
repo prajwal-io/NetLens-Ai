@@ -6,6 +6,8 @@ dist/
 __pycache__/
 .pytest_cache/
 *.db
+*.db-wal
+*.db-shm
 .env
 test-results/
 .pytest-tmp/

@@ -53,6 +53,8 @@ Missing or invalid model artifacts do not prevent the health or schema routes fr
 
 The API requires the 42 model features defined in [`backend/ml/schema.py`](../backend/ml/schema.py): 39 numeric flow features and the categorical fields `proto`, `service`, and `state`. The backend publishes these lists through `/model/schema` and `/model/info` so the frontend does not maintain a second feature list.
 
+This pipeline supports UNSW-NB15-compatible flow records with the same feature meanings and units. Arbitrary CSVs and newer datasets are not interchangeable with this trained model; they need a documented schema adapter and a separately trained/evaluated pipeline before inference.
+
 Upload requirements: UTF-8 CSV (optional BOM), comma/semicolon/tab/pipe delimiter, unique headers, maximum 5 MiB and 10,000 rows. Numeric values must be finite or blank; categorical values may be blank or at most 128 characters. Blank values are normalized to the saved imputers' missing-value marker and imputed using training-fitted statistics. Extra columns are shown in the validation preview but excluded from inference. In particular, `id`, `attack_cat`, and `label` never enter the classifier. Parsing and prediction run in worker threads.
 
 An analysis response includes a generated ID, uploaded filename, model version, threshold, total/class counts, one row ID/label/score per input row, and feature values for up to five preview rows. The prediction CSV includes labels and scores for all rows without copying raw input features. Analyses and all validated feature rows are persisted transactionally in SQLite, including the model evaluation context at prediction time. Raw uploaded bytes and ignored extra columns are not retained.

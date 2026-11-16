@@ -122,7 +122,7 @@ export default function Analyzer({ health }: { health: Health | null }) {
 
     <div className="two-col analyzer-layout">
       <Panel title="Bring your traffic data">
-        <p className="description">Use a UTF-8 CSV with the {requiredColumns.length || 'required'} network-flow feature columns shown here. Numeric and categorical fields are supported; blank values are imputed by the fitted pipeline.</p>
+        <p className="description">Use a UTF-8 CSV matching the UNSW-NB15 model contract: {requiredColumns.length || 42} required flow features with the same meanings and units. Numeric and categorical fields are supported; blank values are imputed by the fitted pipeline. Other schemas need a compatible trained model pipeline.</p>
         {schemaError && <div className="error" role="alert">{schemaError}</div>}
 
         <ol className="validation-steps" aria-label="CSV analysis workflow">

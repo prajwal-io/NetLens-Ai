@@ -27,7 +27,17 @@ async def http_error(request: Request, exc: HTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
-    return JSONResponse(status_code=422, content={"error": {"code": 422, "message": "A CSV file is required in the multipart 'file' field."}})
+    csv_routes = {"/api/v1/traffic/validate", "/api/v1/traffic/analyze"}
+    missing_file = any(
+        error.get("type") == "missing" and error.get("loc", ())[-1:] == ("file",)
+        for error in exc.errors()
+    )
+    message = (
+        "A CSV file is required in the multipart 'file' field."
+        if request.url.path in csv_routes and missing_file
+        else "Request parameters or fields are invalid."
+    )
+    return JSONResponse(status_code=422, content={"error": {"code": 422, "message": message}})
 
 @app.exception_handler(Exception)
 async def unexpected_error(request: Request, exc: Exception):

@@ -185,7 +185,15 @@ def test_row_limit(client, monkeypatch):
 
 
 def test_missing_file(client):
-    assert client.post("/api/v1/traffic/validate").status_code == 422
+    response = client.post("/api/v1/traffic/validate")
+    assert response.status_code == 422
+    assert response.json()["error"]["message"] == "A CSV file is required in the multipart 'file' field."
+
+
+def test_non_upload_validation_errors_are_not_misreported_as_csv_errors(client):
+    response = client.get("/api/v1/analyses?limit=0")
+    assert response.status_code == 422
+    assert response.json()["error"]["message"] == "Request parameters or fields are invalid."
 
 
 def test_model_unavailable_returns_503(client, tmp_path, monkeypatch):

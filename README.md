@@ -251,8 +251,6 @@ The exported reports must match the predictions and totals shown in the applicat
 - Tailwind CSS
 - Custom CSS
 - React Router
-- Recharts
-- React Flow (@xyflow/react)
 - Motion for React
 - Lucide Icons
 
@@ -1045,12 +1043,6 @@ https://fastapi.tiangolo.com/
 
 Scikit-learn:
 https://scikit-learn.org/
-
-React Flow:
-https://reactflow.dev/
-
-Recharts:
-https://recharts.org/
 
 ---
 

@@ -1,6 +1,6 @@
-# Example only. Configure TLS at your reverse proxy before exposing a deployment.
+# Local-only example. Add authentication and TLS before exposing analysis endpoints.
 server {
-    listen 80;
+    listen 127.0.0.1:8080;
     server_name _;
     root /var/www/netsight/frontend/dist;
     index index.html;

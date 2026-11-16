@@ -48,10 +48,15 @@ export default function ModelLab() {
   const metrics = info.evaluation.metrics;
   const candidates = Object.entries(info.validation_candidates);
   const novel = info.evaluation.novel_feature_signature_evaluation;
+  const normalIndex = metrics.confusion_matrix.labels.indexOf('normal');
+  const maliciousIndex = metrics.confusion_matrix.labels.indexOf('malicious');
+  const falseAlerts = metrics.confusion_matrix.rows_actual_columns_predicted[normalIndex]?.[maliciousIndex] ?? 0;
+  const falsePositiveRate = metrics.false_positive_rate ?? falseAlerts / Math.max(metrics.support.normal, 1);
 
   return <>
     <ContextNote>These are measured results on the official UNSW-NB15 test partition. The benchmark includes normal traffic and simulated attack categories; it is not live detection and does not establish performance on other networks.</ContextNote>
     {info.evaluation_warning && <div className="notice model-warning" role="status"><strong>Evaluation caveat:</strong> {info.evaluation_warning}</div>}
+    <div className="notice model-warning" role="note"><strong>Research-only threshold:</strong> The threshold maximizes malicious recall under a 5% validation false-positive-rate target. On this held-out test it produced {falseAlerts.toLocaleString()} false alerts ({percent(falsePositiveRate)} false-positive rate); it is not suitable for unattended detection.</div>
     <div className="two-col">
       <Panel title="The model, in context" aside={<span className="tag">Evaluated / {info.model_version}</span>}>
         <p className="description">A mixed-feature preprocessing pipeline is fitted with each candidate. Random Forest and Logistic Regression are compared on grouped validation data, then the selected candidate is refitted on the official training split.</p>
@@ -111,7 +116,7 @@ export default function ModelLab() {
             <tbody>{candidates.map(([name, candidate]) => <tr key={name}><th scope="row">{name}{name === info.algorithm ? ' / selected' : ''}</th><td>{(candidate.threshold * 100).toFixed(1)}%</td><td>{percent(candidate.metrics.precision)}</td><td>{percent(candidate.metrics.recall)}</td><td>{percent(candidate.metrics.f1)}</td></tr>)}</tbody>
           </table>
         </div>
-        <p className="fine">The selected threshold maximizes malicious-class F1 on validation data. The displayed scores are not calibrated confidence values.</p>
+        <p className="fine">The selected threshold maximizes malicious recall while meeting the validation false-positive-rate target. Scores are not calibrated confidence values.</p>
       </Panel>
     </div>
 

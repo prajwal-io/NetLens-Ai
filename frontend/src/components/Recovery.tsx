@@ -8,7 +8,7 @@ export class ErrorBoundary extends Component<{children:ReactNode;resetKey:string
  componentDidUpdate(previous:{resetKey:string}){if(previous.resetKey!==this.props.resetKey&&this.state.failed)this.setState({failed:false})}
  render(){
   if(!this.state.failed)return this.props.children;
-  return <main id="main-content" tabIndex={-1} className="workspace-main"><section className="recovery-panel" role="alert"><h1>This view could not load.</h1><p>Your uploaded file has not been saved. You can try the view again or return to Command Center.</p><div className="recovery-actions"><button className="primary" onClick={()=>this.setState({failed:false})}>Try this view again</button><button onClick={()=>location.reload()}>Reload application</button><Link to="/command-center">Return to Command Center</Link></div></section></main>;
+  return <main id="main-content" tabIndex={-1} className="workspace-main"><section className="recovery-panel" role="alert"><h1>This view could not load.</h1><p>Try the view again or return to Command Center. Any previously saved analysis remains available in Saved analyses.</p><div className="recovery-actions"><button className="primary" onClick={()=>this.setState({failed:false})}>Try this view again</button><button onClick={()=>location.reload()}>Reload application</button><Link to="/command-center">Return to Command Center</Link></div></section></main>;
  }
 }
 export function PageSkeleton(){
