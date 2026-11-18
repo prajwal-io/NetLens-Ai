@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NetSight AI", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
-                   allow_methods=["GET", "POST", "DELETE"], allow_headers=["Content-Type"])
+                   allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type"])
 app.include_router(router)
 
 @app.exception_handler(HTTPException)

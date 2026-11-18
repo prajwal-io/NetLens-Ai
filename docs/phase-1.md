@@ -48,11 +48,13 @@ In a second terminal from the repository root:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
 Open the local Vite URL shown in the terminal (normally `http://127.0.0.1:5173`). Vite forwards `/api` requests to the FastAPI service on port 8000. The frontend displays backend and model availability from the real health endpoint.
+
+The model artifact and raw training dataset are local generated files and are not committed. Prepare them once on a new demo machine with the download, train, and evaluate commands in [the ML pipeline guide](../backend/ml/README.md). After dependencies and the evaluated model are installed, the [faculty demo workflow](faculty-demo.md) runs locally without internet.
 
 ## Verify upload and inference
 
@@ -65,7 +67,7 @@ Training stages `backend/ml/artifacts/netsight-candidate.joblib` by default. The
 
 ## Completed workflow and release checks
 
-Uploads and historical replays now save analysis snapshots and per-row validated features in local SQLite. Open **Saved analyses** to restore or delete them. **Network Pulse** can analyze two bundled real benchmark excerpts and play their classifications sequentially. **Reports** exports CSV and PDF from the selected saved analysis. Optional IP/time columns are described in [the API contract](architecture.md).
+Uploads and historical replays now save analysis snapshots and per-row validated features in local SQLite. Open **Saved analyses** to restore or delete them. **Network Pulse** can analyze two bundled real benchmark excerpts and play their classifications sequentially. In **Threat Investigation**, analysts can approve a simulated block or dismiss an alert on malicious predictions; decisions persist in SQLite and appear in CSV/PDF reports. This does not alter live traffic or firewall settings. **Reports** exports the selected saved analysis. Optional IP/time columns are described in [the API contract](architecture.md).
 
 With the API running, from `backend/`:
 

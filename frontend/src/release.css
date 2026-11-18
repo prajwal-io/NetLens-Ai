@@ -20,6 +20,13 @@
 .replay-progress { display: grid; gap: 8px; margin-block: 20px; }
 .replay-progress input { width: 100%; min-height: 44px; accent-color: var(--blue); }
 .analysis-result-actions { flex-wrap: wrap; gap: 12px; }
+.investigation-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin-block: 16px; }
+.investigation-filters label { display: grid; flex: 1 1 180px; gap: 6px; }
+.investigation-filters input, .investigation-filters select { width: 100%; min-height: 44px; }
+.ips-simulation-note { padding: 10px 12px; border-left: 2px solid var(--signal-blue); color: var(--muted); }
+.ips-decision, .ips-decision-actions { display: grid; justify-items: start; gap: 8px; min-width: 170px; }
+.ips-decision small { color: var(--muted); }
+.ips-decision button, .ips-decision-actions button { min-height: 40px; white-space: normal; text-align: left; }
 select { max-width: 100%; min-height: 44px; font-size: 16px; }
 :focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; }
 @media (max-width: 600px) { .saved-history { padding: 14px; } .saved-history li { flex-wrap: wrap; } .saved-history li div { flex-basis: 100%; } .actual-topology { min-height: 240px; } }

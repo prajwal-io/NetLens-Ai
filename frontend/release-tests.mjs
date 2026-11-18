@@ -31,13 +31,17 @@ try {
   checks.push('Real benchmark features: validation -> active model -> SQLite');
   for (const [path, name] of [['command-center','Command Center'], ['network-pulse','Network Pulse'], ['threat-investigation','Threat Investigation'], ['reports','Reports']]) {
     await page.goto(`${base}/${path}`);
-    await page.getByRole('heading', { name: `${name}: uploaded analysis`, exact: true }).waitFor();
+    await page.getByRole('heading', { name: path === 'command-center' ? 'Continue this analysis' : `${name}: uploaded analysis`, exact: true }).waitFor();
     assert.ok((await page.locator('main').innerText()).includes(result.analysis_id));
     if (path === 'network-pulse') {
       await page.getByLabel('Inspect device', { exact: false }).selectOption('192.0.2.1');
       assert.ok((await page.locator('.connection-list').innerText()).includes('192.0.2.1'));
     }
     if (path === 'threat-investigation') {
+      await page.getByLabel('Search flows').fill('192.0.2.1');
+      assert.ok(await page.locator('tbody tr').count() > 0, 'Investigation search should find actual source-address records.');
+      await page.getByLabel('Search flows').fill('');
+      await page.getByLabel('Order by').selectOption('score');
       await page.getByRole('button', { name: 'Next', exact: true }).click();
       await page.locator('tbody tr').first().locator('summary').click();
       await page.locator('tbody tr').first().locator('dl').waitFor();
@@ -69,7 +73,49 @@ try {
   assert.equal(await page.getByLabel('Replay position').inputValue(), '0');
   await page.getByLabel('Playback speed').selectOption('4');
   await page.getByLabel('Replay position').fill('100');
+  await page.getByLabel('Replay scenario').selectOption('attack-benchmark');
+  const attackResponse = page.waitForResponse(r => /replays\/attack-benchmark\/analyze$/.test(r.url()));
+  await page.getByRole('button', { name: 'Analyze historical replay' }).click();
+  const attack = await (await attackResponse).json(); created.push(attack.analysis_id);
+  const eligibleRows = attack.predictions.filter(row => row.label === 'malicious').sort((a, b) => b.malicious_score - a.malicious_score).slice(0, 3);
+  assert.ok(eligibleRows.length >= 2, 'The attack benchmark must produce malicious rows for the IPS workflow test.');
+  await page.goto(`${base}/threat-investigation`);
+  await page.getByLabel('Classification').selectOption('malicious');
+  await page.getByLabel('Order by').selectOption('score');
+  const approvedRow = eligibleRows[0].row_id, dismissedRow = eligibleRows[1].row_id;
+  await page.getByRole('button', { name: `Approve simulated block for row ${approvedRow}`, exact: true }).click();
+  await page.getByRole('button', { name: `Undo IPS decision for row ${approvedRow}`, exact: true }).waitFor();
+  await page.reload();
+  await page.getByRole('button', { name: `Undo IPS decision for row ${approvedRow}`, exact: true }).waitFor();
+  await page.goto(`${base}/command-center`);
+  await page.locator('.saved-history summary').click();
+  await page.getByRole('button', { name: /Open attack-benchmark.csv/ }).click();
+  await page.goto(`${base}/threat-investigation`);
+  await page.getByRole('button', { name: `Undo IPS decision for row ${approvedRow}`, exact: true }).waitFor();
+  await page.getByRole('button', { name: `Dismiss alert for row ${dismissedRow}`, exact: true }).click();
+  await page.getByRole('button', { name: `Undo IPS decision for row ${dismissedRow}`, exact: true }).waitFor();
+  await page.getByRole('button', { name: `Undo IPS decision for row ${dismissedRow}`, exact: true }).click();
+  await page.getByRole('button', { name: `Dismiss alert for row ${dismissedRow}`, exact: true }).waitFor();
+  await page.goto(`${base}/reports`);
+  const decisionCsvDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export classification CSV' }).click();
+  const decisionCsv = await (await decisionCsvDownload).path();
+  assert.match(await readFile(decisionCsv, 'utf8'), /simulated_block/);
+  checks.push('Analyst-approved simulated IPS, persisted after reload; dismiss/undo; decision in exported CSV');
   checks.push('Real replay inference; play/pause/restart/speed/seek; no invented topology');
+  await page.goto(`${base}/command-center`);
+  await page.getByRole('heading', { name: 'Model-flagged flows', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Open investigation' }).waitFor();
+  await page.getByText('Simulated response saved', { exact: true }).waitFor();
+  const modelResponse = await page.request.get(`${base}/api/v1/model/info`);
+  assert.ok(modelResponse.ok(), 'The evaluated model metadata endpoint should be available.');
+  const modelInfo = await modelResponse.json();
+  const readiness = await page.locator('.dashboard-readiness').innerText();
+  assert.ok(readiness.includes(`${modelInfo.algorithm} · ${modelInfo.model_version}`));
+  assert.ok(readiness.includes(`${modelInfo.feature_count} flow features`));
+  assert.ok(readiness.includes(`${(modelInfo.decision_threshold * 100).toFixed(1)}% score`));
+  assert.ok((await page.locator('.dashboard-chart-panel').first().innerText()).includes(`≤ ${(modelInfo.threshold_policy.maximum_validation_false_positive_rate * 100).toFixed(1)}% false-positive rate`));
+  checks.push('Command Center reflects live model metadata and persisted analyst response decisions');
   for (const route of ['', 'command-center', 'network-pulse', 'traffic-analyzer', 'threat-investigation', 'model-lab', 'reports']) {
     await page.goto(`${base}/${route}`);
     await page.locator('main h1').waitFor();
@@ -100,7 +146,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('.mobile-navigation summary').click();
   await page.locator('.mobile-navigation').getByRole('link', { name: 'Command Center', exact: true }).click();
-  await page.getByRole('heading', { name: 'Command Center: historical replay' }).waitFor();
+  await page.getByRole('heading', { name: 'Continue this analysis' }).waitFor();
   await page.reload(); await page.keyboard.press('Tab');
   assert.ok(await page.getByRole('link', { name: 'Skip to content' }).evaluate(element => document.activeElement === element));
   await page.keyboard.press('Enter');

@@ -2,11 +2,19 @@
 # NetSight AI
 ### Intelligent Network Traffic Analyser Using Machine Learning
 
-> **Project Status:** Planning and Development
+> **Project Status:** Local academic MVP validated on November 18, 2026
 > **Development:** Primarily Solo
-> **Target Completion:** November 10, 2026
+> **Original MVP Target:** November 10, 2026
 > **Mini-Project Submission:** November 21, 2026
 > **Domain:** Computer Networks + Machine Learning
+
+## Current implementation
+
+The local application connects six workspace modules to one FastAPI workflow: validate a compatible flow CSV, run the saved Random Forest pipeline, store the result in SQLite, and reuse that saved analysis for the Command Center, Network Pulse, Threat Investigation, and CSV/PDF reports. Model Lab displays the model evidence; it is not part of prediction execution.
+
+The installed model is **Random Forest v4** trained and evaluated on the hash-pinned UNSW-NB15 partitions. Its reported official held-out accuracy is **90.69%**, malicious recall **96.87%**, and false-positive rate **16.89%** (6,248 false alerts among 37,000 normal flows). The 5% false-positive limit applies only to validation threshold selection; it did not hold on the official test split. See [the complete evaluation and limitations](docs/model-evaluation.md).
+
+Uploads must use the published 42-feature UNSW-NB15 flow contract. A newer dataset or an arbitrary CSV needs a schema adapter and its own independently evaluated pipeline. Network Pulse replays historical benchmark rows; it is not live capture. Threat actions are saved analyst decisions and simulated blocks; they do not change firewall rules or block real traffic.
 
 ## 1. Project Overview
 
@@ -195,6 +203,9 @@ The Threat Investigation module allows users to examine individual classified ne
 - Traffic record details.
 - Filtering and searching.
 - Explanation of model-generated classifications.
+- Analyst approval for a simulated block, or dismissal of an alert; decisions are saved with the analysis and can be undone.
+
+The simulated IPS action is an educational workflow only. It does not block packets, modify a firewall, or change a network device. Only flows classified as malicious can receive a response decision.
 
 The system must distinguish actual model output from general explanatory text.
 
@@ -234,6 +245,7 @@ The Reports module allows users to export and review network traffic analysis re
 - Dataset information.
 - Analysis timestamp.
 - Suspicious flow summaries.
+- Saved analyst response decisions, labeled as simulated.
 - CSV export.
 - PDF report generation.
 
@@ -304,57 +316,19 @@ The complete faculty demonstration should work without depending on internet con
 
 ## 7. System Architecture
 
-```text
-                    USER
-                     |
-                     v
-             REACT FRONTEND
-                     |
-           Interactive Dashboard
-                     |
-                     v
-              FASTAPI BACKEND
-                     |
-       +-------------+-------------+
-       |             |             |
-       v             v             v
-   CSV Input     Analysis API   Replay Data
-       |             |             |
-       +-------------+-------------+
-                     |
-                     v
-               DATA VALIDATION
-                     |
-                     v
-                PREPROCESSING
-                     |
-                     v
-              FEATURE PROCESSING
-                     |
-                     v
-               ML MODEL
-             (Random Forest)
-                     |
-                     v
-             TRAFFIC CLASSIFICATION
-                     |
-          +----------+----------+
-          |                     |
-          v                     v
-     NORMAL TRAFFIC       MALICIOUS TRAFFIC
-          |                     |
-          +----------+----------+
-                     |
-                     v
-              FASTAPI RESPONSE
-                     |
-                     v
-             REACT DASHBOARD
-                     |
-          +----------+----------+
-          |                     |
-          v                     v
-     VISUALIZATION         REPORT EXPORT
+```mermaid
+flowchart LR
+  U[CSV upload or historical replay] --> R[React workspace and API client]
+  R --> V[FastAPI validation]
+  V --> M[Saved preprocessing and Random Forest]
+  M --> P[Normal or malicious label and score]
+  P --> S[Transactional SQLite snapshot]
+  S --> D[Command Center and Network Pulse]
+  S --> I[Threat Investigation and saved analyst decisions]
+  S --> X[CSV and PDF reports]
+  T[Hash-pinned UNSW-NB15 splits] --> Q[Offline training and held-out evaluation]
+  Q --> A[Evaluated local model artifact]
+  A --> M
 ```
 
 The CSV analysis path, historical replay input, SQLite analysis history, backend CSV export, and PDF reports are implemented through the stages above. Actual classifications are shared across the main workspace pages. Device topology uses optional validated source/destination IP columns; files without these columns do not produce invented relationships. See [the architecture review](docs/architecture-review.md) for the stage-by-stage implementation map.
@@ -504,6 +478,9 @@ Base URL:
 | POST | /replays/{id}/analyze | Analyze selected replay |
 | GET | /analyses/{id}/export.csv | CSV export |
 | GET | /analyses/{id}/report.pdf | PDF report |
+| GET | /analyses/{id}/response-decisions | Read saved analyst decisions |
+| PUT | /analyses/{id}/flows/{row_id}/response | Record an approved simulated block or dismissed alert |
+| DELETE | /analyses/{id}/flows/{row_id}/response | Undo a simulated response decision |
 
 ### Example Health Response
 
@@ -558,6 +535,7 @@ The following JSON demonstrates the planned response structure. Its values are i
 - Correct HTTP status codes.
 - Proper model-loading errors.
 - No fabricated predictions.
+- Simulated IPS decisions must never be represented as real traffic prevention.
 
 If the model has not been trained, evaluated, or cannot load, prediction requests should return an appropriate error such as HTTP 503.
 
@@ -573,7 +551,7 @@ Avoid generic cybersecurity templates and overused AI-generated website aestheti
 
 ### Theme
 
-Primary theme: Dark
+Primary theme: Dark, with a near-black canvas and restrained blue, red, and green signal colors.
 
 ### Color Palette
 
@@ -590,12 +568,12 @@ Primary theme: Dark
 
 - Space Grotesk: Headings
 - Inter: Interface text
-- Optional monospace: Technical values and network identifiers
+- Monospace with tabular figures: Scores, thresholds, and network identifiers
 
 ### Layout
 
-- Compact, floating horizontal navigation.
-- Consistent navigation.
+- Compact, floating horizontal workspace navigation.
+- Consistent navigation across the landing page and workspace.
 - Spacious dashboard grid.
 - Clearly differentiated sections.
 - Responsive layout.
@@ -605,7 +583,7 @@ Primary theme: Dark
 
 ### Motion and Interaction
 
-Use animations only when they serve an actual purpose.
+Use animations only when they serve an actual purpose. Sparse topology paths and slow terminal-like telemetry marks sit near the screen edges; they are decorative and never represent live traffic. Respect reduced-motion preferences.
 
 Examples:
 
@@ -721,86 +699,68 @@ Do not commit:
 
 ### Prerequisites
 
-- Node.js
-- npm
-- Python 3.11 or 3.12
+- Node.js and npm
+- Python 3.12
 - Git
-- VS Code or another editor
 
-### Frontend Setup
+### Backend setup
 
-From the project root:
+From the repository root, create and activate the environment, then install the pinned dependencies:
 
-```bash
-npm create vite@latest frontend -- --template react-ts
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.lock.txt
+```
+
+The evaluated model artifact and raw dataset are generated locally and are not stored in Git. On a new machine, prepare them once:
+
+```powershell
+python -m ml.download_dataset
+python -m ml.train
+python -m ml.evaluate
+python scripts/check_setup.py
+```
+
+Then start FastAPI:
+
+```powershell
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+If a verified local model artifact already exists, the download, train, and evaluate steps are not needed at each startup. See the [ML pipeline guide](backend/ml/README.md) for artifact and evaluation behavior.
+
+### Frontend setup
+
+In a second terminal from the repository root:
+
+```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Install the selected frontend libraries and configure Tailwind CSS following their current installation instructions.
+Open the Vite URL shown in the terminal (normally `http://127.0.0.1:5173`). Vite forwards same-origin `/api` calls to FastAPI; no frontend API URL override is required for local development. The API is at `http://127.0.0.1:8000`, health at `/api/v1/health`, and interactive docs at `/docs`.
 
-### Frontend Environment
+After installing dependencies and preparing the model once, the faculty demonstration can run without internet. Follow the [offline faculty demo guide](docs/faculty-demo.md).
 
-Create `frontend/.env`:
+### Local verification
 
-```dotenv
-VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1
-```
-
-### Backend Setup
-
-Create the `backend` directory.
-
-Inside it:
-
-```bash
-python -m venv .venv
-```
-
-Activate the environment.
-
-Windows PowerShell:
+With the API running, from `backend/` run:
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+python scripts/check_release.py
+python -m pytest tests -q
 ```
 
-macOS/Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-python -m pip install fastapi "uvicorn[standard]" python-multipart pydantic pandas numpy scikit-learn joblib
-```
-
-Once `backend/app/main.py` has been implemented with a FastAPI instance named `app`, start the server:
-
-```bash
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Backend URL:
-
-`http://127.0.0.1:8000`
-
-Health endpoint:
-
-`http://127.0.0.1:8000/api/v1/health`
-
-API documentation:
-
-`http://127.0.0.1:8000/docs`
-
-These commands describe the initial development setup. The source files, endpoints, and ML model must still be implemented.
+From `frontend/`, run `npm run build` for the production TypeScript and Vite build, `npm run test:smoke` for the fast browser smoke check, and `npm run test:release` for the full browser workflow and accessibility checks. See [the local runbook](docs/phase-1.md) for details.
 
 ---
 
 ## 13. Development Roadmap
+
+The dates and task lists below preserve the original plan for project history. The current implementation and verified demo workflow are summarized in [Current implementation](#current-implementation) and [the release record](docs/release-completion.md).
 
 ### Phase 1: Frontend and Backend Foundation
 
@@ -929,53 +889,17 @@ The November 10 target is an aggressive MVP target. Core reliability should take
 ---
 
 
-## 14. Testing Checklist
+## 14. Latest verification — November 18, 2026
 
-### Frontend
+- Clean Python 3.12 backend install from the pinned lock; FastAPI loaded v4 and initialized SQLite.
+- Clean-environment training and held-out evaluation reproduced the v4 threshold and metrics in a temporary artifact; the active model remained unchanged.
+- Existing v4 artifact re-evaluated on the hash-verified official UNSW-NB15 test partition; metrics matched its metadata.
+- **66 backend tests passed**; five API integration checks passed.
+- Clean and workspace frontend installs built successfully with TypeScript and Vite.
+- Browser release regression passed with zero JavaScript errors, zero axe violations, and no horizontal overflow at 390, 768, and 1440 pixels.
+- CSV upload, replay, saved history, linked views, simulated analyst actions, and CSV/PDF exports returned matching analysis data.
 
-- [ ] All six routes work.
-- [ ] Sidebar navigation functions correctly.
-- [ ] Dashboard components render properly.
-- [ ] Responsive layout works.
-- [ ] Charts display correct information.
-- [ ] Loading states work.
-- [ ] Empty states work.
-- [ ] Error states work.
-- [ ] Network visualization is interactive.
-- [ ] Demo data is correctly labeled.
-
-### Backend
-
-- [ ] FastAPI starts without errors.
-- [ ] Health-check endpoint works.
-- [ ] CORS is configured.
-- [ ] CSV validation works.
-- [ ] Invalid files are rejected.
-- [ ] API errors are handled.
-- [ ] Model loading works.
-- [ ] Inference returns real results.
-
-### Machine Learning
-
-- [ ] Dataset preprocessing succeeds.
-- [ ] Model training completes.
-- [ ] Held-out evaluation is implemented.
-- [ ] Model artifacts are saved.
-- [ ] Inference uses the saved pipeline.
-- [ ] Feature schema matches training.
-- [ ] Evaluation metrics are reproducible.
-- [ ] No fabricated metrics are displayed.
-
-### Integration
-
-- [ ] React connects to FastAPI.
-- [ ] Uploaded CSV reaches the backend.
-- [ ] ML predictions return to the frontend.
-- [ ] Dashboard displays real results.
-- [ ] Classification totals are correct.
-- [ ] Investigation details match selected records.
-- [ ] Replay scenarios work.
-- [ ] Reports match analysis results.
+See [the detailed release record](docs/release-completion.md) for limitations and the exact checks. The full development dependency audit still reports four high findings in dev-only tooling; the production dependency audit reports zero.
 
 ---
 
@@ -1010,6 +934,7 @@ Important limitations:
 - Model predictions are not proof of malicious behavior.
 - Historical replay is not live packet monitoring.
 - The system does not automatically prevent cyberattacks.
+- Analyst-approved simulated IPS decisions do not affect live traffic or firewall settings.
 - The model is limited by its training data and features.
 - Raw PCAP support requires additional processing.
 - Network data should only be analyzed with appropriate authorization.
@@ -1046,40 +971,9 @@ https://scikit-learn.org/
 
 ---
 
-## 18. Immediate Development Priority
+## 18. Faculty Demonstration
 
-Start with Phase 1.
-
-The first working integration should be:
-
-```text
-React Dashboard
-      |
-      v
-Frontend API Client
-      |
-      v
-GET /api/v1/health
-      |
-      v
-FastAPI Backend
-      |
-      v
-Health Response
-      |
-      v
-Real Backend Status Displayed in UI
-```
-
-After the first integration works:
-
-1. Build CSV validation.
-2. Prepare the ML dataset.
-3. Train the classification model.
-4. Implement real inference.
-5. Connect predictions to the dashboard.
-6. Complete historical replay.
-7. Prepare the faculty demonstration.
+Use the [offline faculty demo runbook](docs/faculty-demo.md) for one-time setup, local startup, the suggested presentation flow, and recovery steps. The runbook uses the existing evaluated model and bundled real historical excerpts; it does not depend on internet after preparation.
 
 ### Development Principle
 

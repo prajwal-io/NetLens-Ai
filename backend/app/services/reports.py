@@ -6,27 +6,35 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle
-from app.schemas.traffic import AnalysisResponse
+from app.schemas.traffic import AnalysisResponse, ResponseDecision
 
 
-def csv_report(analysis: AnalysisResponse) -> bytes:
+def csv_report(analysis: AnalysisResponse, decisions: list[ResponseDecision] | None = None) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(["row_id", "label", "malicious_score", "source_ip", "destination_ip", "timestamp"])
+    decision_by_row = {item.row_id: item for item in decisions or []}
+    writer.writerow(["row_id", "label", "malicious_score", "source_ip", "destination_ip", "timestamp", "ips_demo_action", "ips_decided_at"])
     for row in analysis.predictions:
+        decision = decision_by_row.get(row.row_id)
         writer.writerow([row.row_id, row.label, row.malicious_score, row.source or "",
-                         row.destination or "", row.timestamp or ""])
+                         row.destination or "", row.timestamp or "", decision.decision if decision else "",
+                         decision.decided_at if decision else ""])
     return output.getvalue().encode("utf-8-sig")
 
 
-def pdf_report(analysis: AnalysisResponse) -> bytes:
+def pdf_report(analysis: AnalysisResponse, decisions: list[ResponseDecision] | None = None) -> bytes:
     output = io.BytesIO()
     styles = getSampleStyleSheet()
     story = [Paragraph("NetSight AI | Traffic analysis", styles["Title"])]
+    decisions = decisions or []
+    decision_by_row = {item.row_id: item for item in decisions}
+    approved_count = sum(item.decision == "simulated_block" for item in decisions)
+    dismissed_count = sum(item.decision == "dismissed" for item in decisions)
     lines = [f"Analysis: {analysis.analysis_id}", f"Dataset: {analysis.filename}",
              f"Source: {analysis.source_type} (not live monitoring)", f"Created (UTC): {analysis.created_at}",
              f"Model: {analysis.model_version}", f"Decision threshold: {analysis.threshold:.6f}",
              f"Total flows: {analysis.total_flows} | Normal: {analysis.counts.normal} | Malicious: {analysis.counts.malicious}",
+             f"Analyst decisions: {approved_count} simulated blocks approved; {dismissed_count} alerts dismissed. No live traffic was blocked.",
              f"Score definition: {analysis.score_definition}", analysis.message]
     context = analysis.model_context
     if context.get("dataset"):
@@ -45,9 +53,12 @@ def pdf_report(analysis: AnalysisResponse) -> bytes:
     for line in lines:
         story.extend([Paragraph(escape(line), styles["BodyText"]), Spacer(1, 9)])
     story.append(Paragraph("Classified records (all rows)", styles["Heading2"]))
-    data = [["Row", "Classification", "Malicious score"]] + [
-        [str(row.row_id), row.label, f"{row.malicious_score:.8f}"] for row in analysis.predictions]
-    table = LongTable(data, repeatRows=1, colWidths=[75, 220, 170])
+    data = [["Row", "Classification", "Malicious score", "Analyst action"]]
+    for row in analysis.predictions:
+        decision = decision_by_row.get(row.row_id)
+        action = {"simulated_block": "Simulated block", "dismissed": "Alert dismissed"}.get(decision.decision, "Not reviewed") if decision else "Not reviewed"
+        data.append([str(row.row_id), row.label, f"{row.malicious_score:.8f}", action])
+    table = LongTable(data, repeatRows=1, colWidths=[42, 100, 116, 150])
     table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#173669")),
                                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                                ("BOTTOMPADDING", (0, 0), (-1, 0), 10),

@@ -82,3 +82,19 @@ class AnalysisHistory(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ResponseDecisionRequest(BaseModel):
+    decision: Literal["simulated_block", "dismissed"]
+
+
+class ResponseDecision(BaseModel):
+    analysis_id: str
+    row_id: int
+    decision: Literal["simulated_block", "dismissed"]
+    decided_at: str
+
+
+class ResponseDecisionList(BaseModel):
+    analysis_id: str
+    items: list[ResponseDecision]

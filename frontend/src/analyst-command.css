@@ -19,12 +19,12 @@
   margin: 22px 0 26px;
   padding: 16px 20px;
   border-block: 1px solid var(--border);
-  background: rgb(16 23 34 / .78);
+  background: var(--surface-overlay);
 }
 
 .benchmark-copy p {
   margin: 0 0 5px;
-  color: #afbdd0;
+  color: var(--text-subtle);
   font-size: 11px;
 }
 
@@ -52,14 +52,14 @@
 }
 
 .benchmark-metrics dt {
-  color: #a4b1c2;
+  color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.4;
 }
 
 .benchmark-metrics dd {
   margin: 6px 0 0;
-  color: #e9eef7;
+  color: var(--ink);
   font: 500 21px/1 "Space Grotesk", sans-serif;
   font-variant-numeric: tabular-nums;
   letter-spacing: -.03em;
@@ -76,14 +76,14 @@
   justify-content: flex-end;
   gap: 6px;
   min-height: 40px;
-  color: #a9c8ff;
+  color: var(--link-muted);
   font-size: 12px;
   white-space: nowrap;
 }
 
 .benchmark-evidence-error {
   grid-template-columns: 1fr auto;
-  color: #ffc0c5;
+  color: var(--threat-soft);
   font-size: 12px;
 }
 
@@ -99,7 +99,7 @@
   gap: 7px;
   min-height: 40px;
   padding: 0 10px;
-  color: #bdc8d7;
+  color: var(--text-soft);
   font-size: 12px;
 }
 
@@ -142,7 +142,7 @@
   gap: 18px;
   min-height: 64px;
   padding: 10px 8px;
-  border-bottom: 1px solid #263346;
+  border-bottom: 1px solid var(--border-muted);
 }
 
 .recent-analysis-file {
@@ -196,14 +196,14 @@
   padding: 0 10px;
   border: 0;
   background: transparent;
-  color: #a9c8ff;
+  color: var(--link-muted);
   font-size: 12px;
   grid-area: open;
 }
 
 .recent-analyses-list li > button:hover:not(:disabled) {
-  color: white;
-  background: #172437;
+  color: var(--ink);
+  background: var(--surface-hover);
 }
 
 .recent-analyses-state,
@@ -216,7 +216,7 @@
 }
 
 .recent-analyses-error {
-  color: #ffc0c5;
+  color: var(--threat-soft);
 }
 
 .recent-analyses-empty {

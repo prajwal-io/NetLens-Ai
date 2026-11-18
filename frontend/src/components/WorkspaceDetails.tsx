@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 import { ArrowRight, Info } from 'lucide-react';
 import type { ReactNode } from 'react';
 export function ContextNote({children}:{children:ReactNode}){

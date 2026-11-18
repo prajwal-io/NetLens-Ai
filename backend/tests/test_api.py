@@ -67,6 +67,7 @@ def client(tmp_path, monkeypatch):
         "evaluation": {
             "split": "test fixture holdout",
             "rows": 2,
+            "threshold": 0.5,
             "metrics": {
                 "accuracy": 1.0,
                 "balanced_accuracy": 1.0,
@@ -75,6 +76,8 @@ def client(tmp_path, monkeypatch):
                 "f1": 1.0,
                 "average_precision": 1.0,
                 "roc_auc": 1.0,
+                "false_positive_rate": 0.0,
+                "specificity": 1.0,
                 "support": {"normal": 1, "malicious": 1},
                 "confusion_matrix": {"labels": ["normal", "malicious"], "rows_actual_columns_predicted": [[1, 0], [0, 1]]},
             },
@@ -104,6 +107,20 @@ def test_health_and_database(client):
     assert response.json()["model_loaded"] is True
     assert response.json()["model_version"] == "netsight-test-v1"
     assert settings.database_path.exists()
+
+
+def test_cors_preflight_allows_analyst_response_updates(client):
+    response = client.options(
+        "/api/v1/analyses/example/flows/1/response",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "PUT" in response.headers["access-control-allow-methods"]
 
 
 def test_model_schema_matches_feature_contract(client):
@@ -218,6 +235,7 @@ def test_incomplete_and_invalid_artifacts_fail_closed(client, tmp_path):
         {"format_version": 2},
         {**original, "features": list(reversed(FEATURE_COLUMNS))},
         {**original, "metadata": {**original["metadata"], "evaluation": None}},
+        {**original, "metadata": {**original["metadata"], "evaluation": {**original["metadata"]["evaluation"], "metrics": {}}}},
         {**original, "threshold": float("nan")},
         {**original, "pipeline": None},
     ]

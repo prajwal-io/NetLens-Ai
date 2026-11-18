@@ -23,9 +23,11 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(15000);
   const errors = [];
+  let failSchemaRequest = false;
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname;
+    if (failSchemaRequest && path === '/api/v1/model/schema') return route.abort();
     const responses = {
       '/api/v1/health': { status: 200, body: { status: 'ok', service: 'netsight-api', model_loaded: false, model_version: null } },
       '/api/v1/analyses': { status: 200, body: { items: [], total: 0, limit: 10, offset: 0 } },
@@ -41,12 +43,20 @@ try {
   await page.getByRole('heading', { name: 'Your network. In plain sight.' }).waitFor();
   await page.getByRole('link', { name: 'Enter Command Center' }).click();
   await page.getByRole('heading', { name: 'Command Center', exact: true }).waitFor();
-  for (const name of ['Network Pulse', 'Traffic Analyzer', 'Threat Investigation', 'Model Lab', 'Reports', 'Command Center']) {
+  await page.locator('nav[aria-label="Workspace navigation"] a').last().waitFor();
+  assert.equal(await page.locator('nav[aria-label="Workspace navigation"] a').count(), 5, 'Primary navigation should contain the five jury-demo modules.');
+  for (const name of ['Network Pulse', 'Traffic Analyzer', 'Threat Investigation', 'Reports', 'Command Center']) {
     await page.locator('nav').getByRole('link', { name, exact: true }).click();
     await page.getByRole('heading', { name, exact: true, level: 1 }).waitFor();
   }
+  await page.goto(`${base}/model-lab`);
+  await page.getByRole('heading', { name: 'Model Lab', exact: true, level: 1 }).waitFor();
+  failSchemaRequest = true;
+  await page.goto(`${base}/traffic-analyzer`);
+  await page.getByRole('alert').filter({ hasText: 'Cannot reach NetSight API. Check the backend connection and retry.' }).waitFor();
+  failSchemaRequest = false;
   assert.deepEqual(errors, [], 'The app should render all six routes without browser errors.');
-  console.log('PASS: landing page, all six workspace routes, mocked API states, and no browser errors.');
+  console.log('PASS: all routes, mocked API states, and readable recovery when the model schema request fails.');
 } finally {
   await browser?.close();
   server.kill();

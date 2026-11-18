@@ -1,6 +1,6 @@
-# NetSight AI completion: items 2-8
+# NetSight AI release verification
 
-This pass adds the requested application features without adding another dataset or changing the 42-feature model contract. The existing evaluated Random Forest remains active.
+The current local release keeps the 42-feature UNSW-NB15 contract and active Random Forest v4. This record separates measured behavior from the remaining model and environment limits.
 
 | Item | Implemented behavior |
 |---|---|
@@ -25,19 +25,23 @@ Historical replay enters the same inference service. Training/evaluation stay of
 - Playback follows record order at a chosen demonstration rate; original timestamps and device relationships do not exist in those excerpts.
 - Optional IP/time fields add context only. They do not make an incompatible feature schema compatible. Topology is limited to 40 devices and 80 directed connections for readable rendering; the full records table remains available.
 - Raw uploaded bytes and ignored extra columns are not retained. Validated feature rows, optional recognized context and prediction snapshots are stored in the local database. Delete through Saved analyses to remove them. SQLite is local storage, not encrypted storage; use this local single-user app accordingly.
-- The held-out false-positive rate remains 16.58%. This is an academic analysis aid, not an unattended incident detector. No new training or threshold tuning against the test set occurred.
+- The v4 model was re-evaluated on the hash-pinned official test split on November 18, 2026. Its held-out false-positive rate is 16.89% (6,248 false alerts among 37,000 normal flows), despite a 5% validation constraint. This is an academic analysis aid, not an unattended incident detector. The test split was not used to retrain or tune the threshold.
 
 ## Verification
 
-- Backend: **59 tests passed** (one existing Starlette/httpx deprecation warning).
-- Runtime: **five checks passed** against `netsight-rf-unsw-v3`: API/schema, real UTF-8 CSV validation, inference/history/detail, CSV/PDF consistency, replay equivalence. Numeric score equivalence uses `1e-12` tolerance because parallel forest probability summation can differ at floating-point precision; labels must match exactly.
-- Frontend: TypeScript and Vite production build passed.
-- Chrome: real benchmark upload, shared result identity across four pages, reload restoration, context topology fixture, flow detail beyond first five rows, CSV/PDF downloads, replay controls, offline history error/retry, keyboard skip link and mobile menu passed.
-- Layout: landing plus six workspace routes checked at 390, 768 and 1440 pixels, with no horizontal document overflow.
-- Accessibility: axe WCAG 2 A/AA and 2.1 AA scans found zero violations on those seven routes, with reduced motion enabled. These automated checks do not replace physical-device, screen-reader or cross-browser testing.
+- Clean setup: Python 3.12 installed from `requirements.lock.txt`; the clean FastAPI environment loaded v4, initialized a fresh SQLite file, and passed setup and runtime preflight. A clean frontend copy passed `npm ci` and its TypeScript/Vite production build.
+- Training reproducibility: the clean environment trained to a temporary artifact using the pinned splits. It selected Random Forest at threshold 0.5779595, validation recall 95.57%, and validation false-positive rate 4.99%; held-out results matched the v4 metadata. The temporary artifact was not published over the active model.
+- Held-out validation: the existing v4 artifact was evaluated against the 175,341-row training and 82,332-row official test CSVs after the downloader verified both SHA-256 hashes, row counts, and canonical split roles. The recalculated accuracy, recall, false-positive rate, confusion matrix, and threshold exactly matched the model metadata. The active artifact was not replaced.
+- Backend: **66 tests passed** (one non-blocking Starlette/httpx deprecation warning).
+- Runtime integration: **five checks passed** against `netsight-rf-unsw-v4`: API/schema, real UTF-8 CSV validation, inference/history/detail, CSV/PDF consistency, and replay equivalence. Numeric score equivalence uses `1e-12` tolerance because parallel forest probability summation can differ at floating-point precision; labels must match exactly.
+- Frontend: the workspace and clean-copy TypeScript/Vite production builds passed.
+- Browser: real benchmark upload, shared result identity across four pages, reload restoration, topology context, flow detail, CSV/PDF downloads, simulated IPS actions, replay controls, offline history error/retry, and keyboard/mobile navigation passed. There were **zero page errors**.
+- Layout: landing plus six workspace routes were checked at 390, 768 and 1440 pixels, with no horizontal document overflow.
+- Accessibility: axe WCAG 2 A/AA and 2.1 AA scans found **zero violations** on those seven routes, with reduced motion enabled. These automated checks do not replace physical-device, screen-reader or cross-browser testing.
+- Dependency audit: `npm audit --omit=dev` reported zero production vulnerabilities. The full development dependency tree reported four high advisories associated with the [Picomatch ReDoS advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf); no patched release is listed, so the lockfile was not force-downgraded.
 - Browser tests block external HTTP requests and confirm none are required after local setup. Fonts, scenarios and model run locally; initial dependency installation and model preparation can require internet.
 
-Browser fixture topology fields use documentation-only IP ranges and test timestamps appended to real benchmark features. They test optional context rendering and are never presented as original capture metadata. Tests remove their own analysis records. Screenshots and machine-readable browser results are generated under `docs/release-evidence/`.
+Browser fixture topology fields use documentation-only IP ranges and test timestamps appended to real benchmark features. They test optional context rendering and are never presented as original capture metadata. Tests remove their own analysis records.
 
 ## Try it
 

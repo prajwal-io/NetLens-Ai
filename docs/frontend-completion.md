@@ -1,4 +1,4 @@
-# Frontend completion: 18-area checklist
+﻿# Frontend completion: 18-area checklist
 
 | Area | Delivered |
 |---|---|

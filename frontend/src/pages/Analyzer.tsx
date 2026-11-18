@@ -1,11 +1,10 @@
 import { useAnalysis, setAnalysis } from '../services/analysis';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDownToLine, ArrowRight, CheckCircle2, Download, FileText, Upload, X } from 'lucide-react';
-import { Panel, Empty } from '../components/ui';
+import { ArrowDownToLine, ArrowRight, CheckCircle2, FileText, Upload, X } from 'lucide-react';
+import { Panel } from '../components/ui';
 import { ContextNote } from '../components/WorkspaceDetails';
-import { api, type Analysis, type FeatureSchema, type Health, type Validation } from '../services/api';
-import { useReceipts } from '../services/receipts';
+import { api, type FeatureSchema, type Health, type Validation } from '../services/api';
 
 const uploadLimit = 5 * 1024 * 1024;
 function fileError(file: File) {
@@ -19,26 +18,7 @@ function readableSize(size: number) {
   return size < 1024 ? `${size} bytes` : `${(size / 1024).toFixed(1)} KiB`;
 }
 
-function csvCell(value: string | number) {
-  const raw = String(value);
-  const text = /^[\s]*[=+@-]/.test(raw) ? `'${raw}` : raw;
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
-function downloadAnalysis(analysis: Analysis) {
-  const content = [
-    ['row_id', 'label', 'malicious_score', 'decision_threshold', 'model_version', 'source_file'],
-    ...analysis.predictions.map((prediction) => [prediction.row_id, prediction.label, prediction.malicious_score.toFixed(6), analysis.threshold.toFixed(4), analysis.model_version, analysis.filename]),
-  ].map((row) => row.map(csvCell).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `netsight-${analysis.analysis_id.slice(0, 8)}-predictions.csv`;
-  try { document.body.append(link); link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-}
-
 export default function Analyzer({ health }: { health: Health | null }) {
-  const { addReceipt } = useReceipts();
   const [featureSchema, setFeatureSchema] = useState<FeatureSchema | null>(null);
   const [schemaError, setSchemaError] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -48,7 +28,6 @@ export default function Analyzer({ health }: { health: Health | null }) {
   const [action, setAction] = useState<'validate' | 'analyze' | null>(null);
   const [progress, setProgress] = useState(0);
   const [notice, setNotice] = useState('');
-  const [downloadNotice, setDownloadNotice] = useState('');
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const controller = useRef<AbortController | null>(null);
@@ -69,7 +48,6 @@ export default function Analyzer({ health }: { health: Health | null }) {
     setResult(null);
     setAnalysis(null);
     setNotice('');
-    setDownloadNotice('');
     setFile(next ?? null);
     setError(next ? fileError(next) : '');
     setProgress(0);
@@ -88,7 +66,6 @@ export default function Analyzer({ health }: { health: Health | null }) {
     setAction(kind);
     setError('');
     setNotice('');
-    setDownloadNotice('');
     setProgress(0);
     if (kind === 'validate') { setResult(null); setAnalysis(null); }
     try {
@@ -96,7 +73,6 @@ export default function Analyzer({ health }: { health: Health | null }) {
         const validation = await api.validate(file, { signal: request.signal, onProgress: setProgress });
         if (!request.signal.aborted) {
           setResult(validation);
-          addReceipt(validation);
         }
       } else {
         const next = await api.analyze(file, { signal: request.signal, onProgress: setProgress });
@@ -154,7 +130,8 @@ export default function Analyzer({ health }: { health: Health | null }) {
 
         {file && <div className="selected-file"><FileText size={20} aria-hidden="true" /><div><strong>{file.name}</strong><span>{readableSize(file.size)} / CSV / modified {new Date(file.lastModified).toLocaleDateString()}</span></div><button type="button" aria-label="Remove selected file" disabled={busy} onClick={removeFile}><X size={18} /></button></div>}
 
-        <div className="upload-actions"><a href="/sample-flows.csv" download><ArrowDownToLine size={17} /> Download sample CSV</a><button type="button" className="primary" disabled={!file || !featureSchema || busy || !!(file && fileError(file))} onClick={() => processRequest('validate')}>{action === 'validate' ? 'Validating…' : 'Validate CSV'}<ArrowRight size={16} /></button></div>
+        <div className="upload-actions"><a href="/sample-flows.csv" download><ArrowDownToLine size={17} /> Download schema example</a><button type="button" className="primary" disabled={!file || !featureSchema || busy || !!(file && fileError(file))} onClick={() => processRequest('validate')}>{action === 'validate' ? 'Validating…' : 'Validate CSV'}<ArrowRight size={16} /></button></div>
+        <p className="fine">The downloadable three-row file is synthetic test input. Use Historical replay for real benchmark traffic.</p>
 
         {busy && <div className="upload-progress"><div role="status">{progress < 100 ? `Uploading CSV: ${progress}%` : action === 'analyze' ? 'Upload complete. Running model inference…' : 'Upload complete. Checking schema…'}</div><progress aria-label={progress < 100 ? 'CSV upload progress' : action === 'analyze' ? 'Running model inference' : 'Validating CSV structure'} max={100} value={progress < 100 ? progress : undefined} /><button type="button" onClick={() => controller.current?.abort()}>Cancel {action === 'analyze' ? 'analysis' : 'validation'}</button></div>}
         {notice && <p className="validation-notice" role="status">{notice}</p>}
@@ -170,7 +147,6 @@ export default function Analyzer({ health }: { health: Health | null }) {
               <li><CheckCircle2 size={16} /><span>{extraColumns.length ? `${extraColumns.length} extra source ${extraColumns.length === 1 ? 'column is' : 'columns are'} excluded from model inputs.` : 'No extra source columns were found.'}</span></li>
             </ul>
             {extraColumns.length > 0 && <div className="schema-warning"><strong>Extra source fields are excluded from inference.</strong><span>IDs, attack-category labels, and other additional columns do not feed the classifier.</span><code>{extraColumns.join(' · ')}</code></div>}
-            <div className="validation-next-links"><Link to="/command-center">View dashboard summary <ArrowRight size={15} /></Link><Link to="/reports">Open validation receipt <ArrowRight size={15} /></Link></div>
           </section>
           {health?.model_loaded
             ? <div className="analysis-action"><div><strong>Run evaluated model</strong><p>Model {health.model_version}. Scores are uncalibrated benchmark probabilities.</p></div><button type="button" className="primary" onClick={() => processRequest('analyze')} disabled={busy}>{action === 'analyze' ? 'Analyzing…' : 'Analyze flows'} <ArrowRight size={16} /></button></div>
@@ -179,30 +155,25 @@ export default function Analyzer({ health }: { health: Health | null }) {
       </Panel>
 
       <Panel title="Model input schema" aside={<span className="tag">{featureSchema?.schema_name ?? 'Loading schema'}</span>}>
-        <p className="description">FastAPI defines the accepted schema: {featureSchema?.numeric_features.length ?? 0} numeric and {featureSchema?.categorical_features.length ?? 0} categorical flow features. IDs and labels are excluded.</p>
-        {featureSchema && <>
-          <h3>Numeric flow features</h3><ul className="model-feature-list">{featureSchema.numeric_features.map((column) => <li key={column}><code>{column}</code></li>)}</ul>
-          <h3>Categorical flow features</h3><ul className="model-feature-list">{featureSchema.categorical_features.map((column) => <li key={column}><code>{column}</code></li>)}</ul>
-        </>}
-        <div className="inline-note"><h3>How to read a result</h3><p>Labels refer to the benchmark classification. A malicious result should be investigated and is not proof of an attack.</p></div>
+        <p className="description">The model accepts {featureSchema?.feature_count ?? 42} UNSW-NB15 flow features: {featureSchema?.numeric_features.length ?? 39} numeric and {featureSchema?.categorical_features.length ?? 3} categorical. IDs and labels are excluded.</p>
+        {featureSchema && <details><summary>View supported feature names</summary>
+          <h3>Numeric features</h3><ul className="model-feature-list">{featureSchema.numeric_features.map((column) => <li key={column}><code>{column}</code></li>)}</ul>
+          <h3>Categorical features</h3><ul className="model-feature-list">{featureSchema.categorical_features.map((column) => <li key={column}><code>{column}</code></li>)}</ul>
+        </details>}
       </Panel>
     </div>
 
     {analysis && <Panel title="Model analysis" aside={<span className="tag">Actual model output / {analysis.model_version}</span>}>
-      <p>Results are linked across <Link to="/command-center">Command Center</Link>, <Link to="/network-pulse">Network Pulse</Link>, <Link to="/threat-investigation">Threat Investigation</Link>, and <Link to="/reports">Reports</Link> and can be reopened from Saved analyses.</p>
-      <div className="analysis-summary" role="status"><div><span>Source file</span><strong>{analysis.filename}</strong></div><div><span>Analyzed records</span><strong>{analysis.total_flows.toLocaleString()}</strong></div><div><span>Decision threshold</span><strong>{(analysis.threshold * 100).toFixed(1)}%</strong></div><div><span>Malicious classifications</span><strong className="analysis-anomalous">{analysis.counts.malicious.toLocaleString()}</strong></div></div>
-      <div className="analysis-disclaimer"><strong>UNSW-NB15 benchmark output</strong><span>{analysis.message} The score is {analysis.score_definition}.</span></div>
-      <div className="analysis-result-actions"><button type="button" className="primary" onClick={() => { try { downloadAnalysis(analysis); setDownloadNotice('CSV export requested.'); } catch { setDownloadNotice('Could not prepare the prediction export.'); } }}><Download size={16} /> Export predictions CSV</button>{downloadNotice && <span role="status">{downloadNotice}</span>}</div>
-      {analysis.preview.length
-        ? <div className="table-scroll analysis-preview" tabIndex={0} role="region" aria-label="Model prediction preview"><table><caption>First {analysis.preview.length} predictions from {analysis.total_flows.toLocaleString()} records</caption><thead><tr><th scope="col">Row</th>{requiredColumns.map((column) => <th scope="col" key={column}>{column}</th>)}<th scope="col">Prediction</th><th scope="col">Malicious score</th></tr></thead><tbody>{analysis.preview.map((row) => <tr key={row.row_id}><th scope="row">{row.row_id}</th>{requiredColumns.map((column) => <td key={column}>{row.features[column] ?? '—'}</td>)}<td><span className={`label-pill ${row.label === 'malicious' ? 'label-red' : 'label-green'}`}>{row.label}</span></td><td>{(row.malicious_score * 100).toFixed(1)}%</td></tr>)}</tbody></table></div>
-        : <Empty title="No preview rows returned">The backend returned a valid analysis summary without preview records.</Empty>}
-      <p className="fine">The download contains model labels and scores for every row. It does not include raw source features, and the analysis is saved in the local SQLite history.</p>
+      <p>{analysis.filename} · {analysis.source_type === 'historical_replay' ? 'Historical benchmark replay' : 'Uploaded CSV'} · {analysis.total_flows.toLocaleString()} flows</p>
+      <div className="analysis-summary" role="status"><div><span>Normal</span><strong>{analysis.counts.normal.toLocaleString()}</strong></div><div><span>Malicious</span><strong className="analysis-anomalous">{analysis.counts.malicious.toLocaleString()}</strong></div><div><span>Decision threshold</span><strong>{(analysis.threshold * 100).toFixed(1)}%</strong></div><div><span>Model</span><strong>{analysis.model_version}</strong></div></div>
+      <div className="analysis-disclaimer"><strong>Benchmark classification; analyst review required.</strong><span>{analysis.message} Scores are {analysis.score_definition}.</span></div>
+      <div className="analysis-result-actions"><Link to="/network-pulse">Network Pulse <ArrowRight size={15}/></Link><Link to="/threat-investigation">Investigate flows <ArrowRight size={15}/></Link><Link to="/reports">Export reports <ArrowRight size={15}/></Link></div>
     </Panel>}
 
-    <Panel title="Inside your dataset" aside={<span className="tag">{result ? 'Validated input' : 'Awaiting a file'}</span>}>
-      {result
-        ? <div className="table-scroll" tabIndex={0} role="region" aria-label="Validated dataset preview"><table><caption>First {result.preview.length} of {result.row_count} validated rows</caption><thead><tr>{result.columns.map((column) => <th scope="col" key={column}>{column}</th>)}</tr></thead><tbody>{result.preview.map((row, index) => <tr key={index}>{result.columns.map((column) => <td key={column}>{row[column]}</td>)}</tr>)}</tbody></table></div>
-        : <Empty title="A preview before analysis">Validate a compatible CSV to inspect its first five rows. Only the 42 supported flow features are sent to the model.</Empty>}
-    </Panel>
+    {result && <Panel title="Validated input preview" aside={<span className="tag">{result.row_count.toLocaleString()} rows / metadata only</span>}>
+      <details><summary>Inspect the first {result.preview.length} validated rows</summary>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="Validated dataset preview"><table><caption>Preview only; raw traffic rows are not retained after validation.</caption><thead><tr>{result.columns.map((column) => <th scope="col" key={column}>{column}</th>)}</tr></thead><tbody>{result.preview.map((row, index) => <tr key={index}>{result.columns.map((column) => <td key={column}>{row[column]}</td>)}</tr>)}</tbody></table></div>
+      </details>
+    </Panel>}
   </>;
 }

@@ -56,7 +56,7 @@ export default function ModelLab() {
   return <>
     <ContextNote>These are measured results on the official UNSW-NB15 test partition. The benchmark includes normal traffic and simulated attack categories; it is not live detection and does not establish performance on other networks.</ContextNote>
     {info.evaluation_warning && <div className="notice model-warning" role="status"><strong>Evaluation caveat:</strong> {info.evaluation_warning}</div>}
-    <div className="notice model-warning" role="note"><strong>Research-only threshold:</strong> The threshold maximizes malicious recall under a 5% validation false-positive-rate target. On this held-out test it produced {falseAlerts.toLocaleString()} false alerts ({percent(falsePositiveRate)} false-positive rate); it is not suitable for unattended detection.</div>
+    <div className="notice model-warning" role="note"><strong>Research-only threshold:</strong> The model selected its cutoff to {info.threshold_policy.objective}. Its validation false-positive rate was {percent(info.threshold_policy.selected_validation_false_positive_rate)} against a {percent(info.threshold_policy.maximum_validation_false_positive_rate)} limit. On the held-out test it produced {falseAlerts.toLocaleString()} false alerts ({percent(falsePositiveRate)} false-positive rate); it is not suitable for unattended detection.</div>
     <div className="two-col">
       <Panel title="The model, in context" aside={<span className="tag">Evaluated / {info.model_version}</span>}>
         <p className="description">A mixed-feature preprocessing pipeline is fitted with each candidate. Random Forest and Logistic Regression are compared on grouped validation data, then the selected candidate is refitted on the official training split.</p>
@@ -68,6 +68,7 @@ export default function ModelLab() {
           ['Dataset', `${info.dataset.name} / ${info.dataset.rows.toLocaleString()} records`],
           ['Training / test', `${info.dataset.training_rows.toLocaleString()} / ${info.dataset.test_rows.toLocaleString()}`],
           ['Decision threshold', `${(info.decision_threshold * 100).toFixed(1)}%`],
+          ['Validation malicious recall', percent(info.threshold_policy.selected_validation_recall)],
           ['Input schema', `${info.feature_count_numeric} numeric + ${info.feature_count_categorical} categorical`],
         ]}/>
         <a className="model-source-link" href={info.dataset.source} target="_blank" rel="noreferrer">Official dataset page <ExternalLink size={14}/></a>

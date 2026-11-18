@@ -1,24 +1,17 @@
 import { useAnalysis } from '../services/analysis';
 import { AnalysisWorkspace } from '../components/AnalysisWorkspace';
-import { isString, usePreference } from '../hooks/preferences';
-import { useState } from 'react';
-import { Download, FileCheck2 } from 'lucide-react';
-import { Panel, Empty } from '../components/ui';
-import { ContextNote, DefinitionList, NextStep } from '../components/WorkspaceDetails';
-import { downloadReceipt, useReceipts } from '../services/receipts';
-
-function SampleReports(){
- const {receipts,clear}=useReceipts();
- const [selected,setSelected]=usePreference('receipt-selection','',isString);
- const [search,setSearch]=usePreference('receipt-search','',isString);
- const [notice,setNotice]=useState(''),[error,setError]=useState('');
- const rows=receipts.filter(r=>r.filename.toLowerCase().includes(search.toLowerCase()));
- const receipt=rows.find(r=>r.id===selected)??rows[0];
- function exportSelected(){if(!receipt)return;setError('');setNotice('');try{downloadReceipt(receipt);setNotice('Download requested. Check your browser downloads for the JSON validation receipt.')}catch{setError('The receipt could not be prepared. Please retry the download.')}}
- return <><ContextNote>Validation receipts stay in this browser tab and contain metadata only. Saved analyses appear in Saved analyses above; open one to review classifications and export its matching CSV or PDF report.</ContextNote><div className="two-col reports-layout"><Panel title="Validation receipts" aside={<span className="tag">{receipts.length} {receipts.length===1?'receipt':'receipts'} / this tab</span>}>{receipts.length?<><label className="field-label" htmlFor="receipt-search">Find a validated file</label><input id="receipt-search" type="search" className="search" value={search} placeholder="Search file name" onChange={e=>setSearch(e.target.value)}/><p className="result-count" role="status">{rows.length} matching {rows.length===1?'receipt':'receipts'} / last 20 retained</p><div className="receipt-list">{rows.map(r=><button key={r.id} aria-pressed={receipt?.id===r.id} onClick={()=>{setSelected(r.id);setNotice('');setError('')}}><FileCheck2 size={19}/><span><strong>{r.filename}</strong><small>{r.rows.toLocaleString()} rows validated / {new Date(r.received_at).toLocaleString()}</small></span></button>)}</div>{!rows.length&&<Empty title="No matching receipts">Try another file name, or clear your search.</Empty>}<button className="clear-receipts" onClick={()=>{clear();setSelected('');setSearch('');setNotice('Session receipts cleared.');setError('')}}>Clear session receipts</button></>:<><Empty title="Start with a validated dataset">A successful CSV validation creates a receipt here. Receipts are not ML analysis reports, and validation alone does not store traffic rows. Running analysis saves validated features and results in the local database.</Empty><NextStep title="Prepare your first input" description="Validate a compatible flow CSV and inspect its schema." to="/traffic-analyzer" label="Open Traffic Analyzer"/></>}</Panel><Panel title={receipt?'Receipt details':receipts.length?'Receipt details':'Saved analysis reports'} aside={<span className="tag">{receipt?'Validation only':receipts.length?'Adjust search':'CSV + PDF exports'}</span>}>{receipt?<><DefinitionList items={ [['File name',receipt.filename],['Validated rows',receipt.rows.toLocaleString()],['Input columns',String(receipt.columns.length)],['Received by browser',new Date(receipt.received_at).toLocaleString()],['ML predictions','Not generated']]}/><div className="receipt-export"><button className="primary" onClick={exportSelected}><Download size={17}/> Download validation receipt</button><p>JSON metadata only. This is not a classification result export.</p></div><details className="receipt-json"><summary>Inspect receipt JSON</summary><pre>{JSON.stringify(receipt,null,2)}</pre></details></>:receipts.length?<Empty title="No matching receipt">Clear or change the search to inspect a saved validation receipt.</Empty>:<><p className="description">Open a saved analysis above to review the dataset, counts, model metadata, and suspicious flow summaries included in its exports.</p><DefinitionList items={ [['Dataset','Source file and flow count'],['Analysis','Timestamp and classification totals'],['Model','Name and pipeline version'],['Findings','Potentially malicious flow summaries'],['Export formats','CSV and PDF']]}/><p className="fine">Historical replay is identified separately from uploaded analysis. Neither is live packet capture.</p></>}</Panel></div>{notice&&<p className="validation-notice" role="status">{notice}</p>}{error&&<div className="error" role="alert">{error}<button onClick={exportSelected}>Retry download</button></div>}</>;
-}
+import { ContextNote, NextStep } from '../components/WorkspaceDetails';
+import { Empty, Panel } from '../components/ui';
 
 export default function Reports() {
- const analysis = useAnalysis();
- return analysis ? <AnalysisWorkspace analysis={analysis} mode="Reports" /> : <SampleReports />;
+  const analysis = useAnalysis();
+  return analysis
+    ? <AnalysisWorkspace analysis={analysis} mode="Reports"/>
+    : <>
+      <ContextNote>CSV and PDF reports are generated from saved model analyses, so the exports match the classifications and totals shown in the workspace.</ContextNote>
+      <Panel title="Reports follow an analysis">
+        <Empty title="No analysis selected">Open a saved analysis above or run one to prepare its classification CSV and PDF report.</Empty>
+        <NextStep title="Run the analysis pipeline" description="Upload a compatible flow CSV, validate it, then run the model." to="/traffic-analyzer" label="Open Traffic Analyzer"/>
+      </Panel>
+    </>;
 }
