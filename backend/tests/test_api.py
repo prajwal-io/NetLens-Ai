@@ -8,11 +8,14 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.core.auth import Principal, require_user
 from app.main import app
 from app.services.model_service import ModelService, model_service
+from app.services import history
 from ml.schema import CATEGORICAL_FEATURES, FEATURE_COLUMNS, NUMERIC_FEATURES
 from ml.train import candidate_models
 
@@ -109,17 +112,102 @@ def test_health_and_database(client):
     assert settings.database_path.exists()
 
 
+def test_analysis_endpoints_require_a_bearer_session(client):
+    override = app.dependency_overrides.pop(require_user)
+    try:
+        for path in ("/api/v1/analyses", "/api/v1/replays", "/api/v1/analyses/private/report.pdf"):
+            response = client.get(path)
+            assert response.status_code == 401
+            assert response.headers["www-authenticate"] == "Bearer"
+        response = client.post("/api/v1/traffic/validate", files={"file": ("flows.csv", _csv([_row(0, 0)]), "text/csv")})
+        assert response.status_code == 401
+        assert client.put("/api/v1/analyses/private/flows/1/response", json={"decision": "dismissed"}).status_code == 401
+        assert client.get("/api/v1/health").status_code == 200
+    finally:
+        app.dependency_overrides[require_user] = override
+
+
+def test_supabase_verifies_token_and_rejects_expired_sessions(client, monkeypatch):
+    class AuthClient:
+        async def get(self, path, headers):
+            assert path == "/auth/v1/user"
+            assert headers["apikey"] == "public-test-key"
+            if headers["Authorization"] == "Bearer expired-token":
+                return httpx.Response(401)
+            if headers["Authorization"] == "Bearer unavailable-token":
+                return httpx.Response(503)
+            return httpx.Response(200, json={"id": "2a17d1c4-b2a8-4da5-976d-f5d46078b756"})
+
+        async def aclose(self):
+            return None
+
+    override = app.dependency_overrides.pop(require_user)
+    monkeypatch.setattr(settings, "supabase_url", "https://auth.example.test")
+    monkeypatch.setattr(settings, "supabase_publishable_key", "public-test-key")
+    app.state.supabase_auth_client = AuthClient()
+    try:
+        assert client.get("/api/v1/analyses", headers={"Authorization": "Bearer valid-token"}).status_code == 200
+        expired = client.get("/api/v1/analyses", headers={"Authorization": "Bearer expired-token"})
+        assert expired.status_code == 401
+        assert expired.headers["www-authenticate"] == "Bearer"
+        assert client.get("/api/v1/analyses", headers={"Authorization": "Bearer unavailable-token"}).status_code == 503
+    finally:
+        app.dependency_overrides[require_user] = override
+
+
+def test_sqlite_analysis_data_is_isolated_between_users(client):
+    first = upload(client, _csv([_row(0, 0), _row(1, 1)]), endpoint="analyze").json()
+    user_a = app.dependency_overrides[require_user]
+    user_b = lambda: Principal("6c6bf789-1f19-40cd-86ef-88e79ca2b680", "another-token")
+    app.dependency_overrides[require_user] = user_b
+    try:
+        assert client.get("/api/v1/analyses").json()["total"] == 0
+        assert client.get(f"/api/v1/analyses/{first['analysis_id']}").status_code == 404
+        assert client.get(f"/api/v1/analyses/{first['analysis_id']}/export.csv").status_code == 404
+        assert client.get(f"/api/v1/analyses/{first['analysis_id']}/report.pdf").status_code == 404
+        assert client.get(f"/api/v1/analyses/{first['analysis_id']}/flows/1").status_code == 404
+        assert client.get(f"/api/v1/analyses/{first['analysis_id']}/response-decisions").status_code == 404
+        assert client.delete(f"/api/v1/analyses/{first['analysis_id']}").status_code == 404
+    finally:
+        app.dependency_overrides[require_user] = user_a
+    assert client.get(f"/api/v1/analyses/{first['analysis_id']}").status_code == 200
+
+
+def test_supabase_storage_sends_verified_user_token_and_owner_filter(monkeypatch):
+    from app.core.auth import Principal
+
+    requested = []
+    transport = httpx.MockTransport(lambda request: requested.append(request) or httpx.Response(
+        200, json=[{"analysis_id": "owned", "filename": "flows.csv", "created_at": "2026-11-18T00:00:00Z",
+                    "source_type": "uploaded_csv", "model_version": "v4", "total_flows": 2,
+                    "counts": {"normal": 1, "malicious": 1}}], headers={"Content-Range": "0-0/1"},
+    ))
+    client_type = httpx.Client
+    monkeypatch.setattr(history.httpx, "Client", lambda **kwargs: client_type(transport=transport, **kwargs))
+    monkeypatch.setattr(settings, "storage_backend", "supabase")
+    monkeypatch.setattr(settings, "supabase_url", "https://project.example.test")
+    monkeypatch.setattr(settings, "supabase_publishable_key", "sb_publishable_public-only")
+    result = history.list_analyses(10, 0, Principal("2a17d1c4-b2a8-4da5-976d-f5d46078b756", "user-jwt"))
+    assert result["total"] == 1
+    assert result["items"][0]["analysis_id"] == "owned"
+    assert len(requested) == 1
+    assert requested[0].headers["authorization"] == "Bearer user-jwt"
+    assert requested[0].headers["apikey"] == "sb_publishable_public-only"
+    assert "user_id=eq.2a17d1c4-b2a8-4da5-976d-f5d46078b756" in str(requested[0].url)
+
+
 def test_cors_preflight_allows_analyst_response_updates(client):
     response = client.options(
         "/api/v1/analyses/example/flows/1/response",
         headers={
             "Origin": "http://localhost:5173",
             "Access-Control-Request-Method": "PUT",
-            "Access-Control-Request-Headers": "content-type",
+            "Access-Control-Request-Headers": "content-type,authorization",
         },
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "authorization" in response.headers["access-control-allow-headers"].lower()
     assert "PUT" in response.headers["access-control-allow-methods"]
 
 

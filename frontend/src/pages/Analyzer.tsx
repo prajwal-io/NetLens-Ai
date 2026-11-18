@@ -154,11 +154,20 @@ export default function Analyzer({ health }: { health: Health | null }) {
         </>}
       </Panel>
 
-      <Panel title="Model input schema" aside={<span className="tag">{featureSchema?.schema_name ?? 'Loading schema'}</span>}>
+      <Panel title="Model input schema" className="schema-panel" aside={<span className="tag">{featureSchema?.schema_name ?? 'Loading schema'}</span>}>
         <p className="description">The model accepts {featureSchema?.feature_count ?? 42} UNSW-NB15 flow features: {featureSchema?.numeric_features.length ?? 39} numeric and {featureSchema?.categorical_features.length ?? 3} categorical. IDs and labels are excluded.</p>
-        {featureSchema && <details><summary>View supported feature names</summary>
-          <h3>Numeric features</h3><ul className="model-feature-list">{featureSchema.numeric_features.map((column) => <li key={column}><code>{column}</code></li>)}</ul>
-          <h3>Categorical features</h3><ul className="model-feature-list">{featureSchema.categorical_features.map((column) => <li key={column}><code>{column}</code></li>)}</ul>
+        {featureSchema && <details className="schema-details">
+          <summary><span>Supported feature names</span><span className="schema-details-count">{featureSchema.feature_count} fields</span></summary>
+          <div className="schema-feature-groups">
+            <section className="schema-feature-group">
+              <h3>Numeric <span>{featureSchema.numeric_features.length} features</span></h3>
+              <ul className="schema-feature-list">{featureSchema.numeric_features.map((column) => <li key={column}><code>{column}</code></li>)}</ul>
+            </section>
+            <section className="schema-feature-group">
+              <h3>Categorical <span>{featureSchema.categorical_features.length} features</span></h3>
+              <ul className="schema-feature-list">{featureSchema.categorical_features.map((column) => <li key={column}><code>{column}</code></li>)}</ul>
+            </section>
+          </div>
         </details>}
       </Panel>
     </div>

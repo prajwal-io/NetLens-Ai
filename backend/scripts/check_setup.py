@@ -7,6 +7,7 @@ import json
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
+from app.core.config import settings
 
 
 def main() -> int:
@@ -36,9 +37,17 @@ def main() -> int:
         )
         return 1
 
+    if not settings.supabase_url or not settings.supabase_publishable_key:
+        print(
+            "Supabase Auth is not configured. Set NETSIGHT_SUPABASE_URL and NETSIGHT_SUPABASE_PUBLISHABLE_KEY before using protected workspace APIs.",
+            file=sys.stderr,
+        )
+        return 1
+
     print(f"Python {sys.version_info.major}.{sys.version_info.minor}: supported")
     print(f"FastAPI: healthy ({health_url})")
     print(f"Evaluated model: {health['model_version']}")
+    print("Supabase Auth configuration: URL and publishable key present; verify sign-in in the browser")
     return 0
 
 

@@ -5,13 +5,22 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 const base = process.env.NETSIGHT_TEST_URL || 'http://127.0.0.1:5176';
 const executablePath = process.env.CHROME_PATH || (existsSync('C:/Program Files/Google/Chrome/Application/chrome.exe') ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined);
+const testEmail = process.env.NETSIGHT_TEST_EMAIL;
+const testPassword = process.env.NETSIGHT_TEST_PASSWORD;
+if (!testEmail || !testPassword) throw new Error('Set NETSIGHT_TEST_EMAIL and NETSIGHT_TEST_PASSWORD to a dedicated local Supabase test account before running the release suite.');
+const supabaseHost = process.env.NETSIGHT_TEST_SUPABASE_URL ? new URL(process.env.NETSIGHT_TEST_SUPABASE_URL).hostname : '127.0.0.1';
 const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
 const page = await context.newPage();
 const errors = [], checks = [], scans = [], created = [], external = [];
-await page.route('**/*', route => { const url = new URL(route.request().url()); if (url.protocol.startsWith('http') && !['127.0.0.1', 'localhost'].includes(url.hostname)) { external.push(url.href); return route.abort(); } return route.continue(); });
+await page.route('**/*', route => { const url = new URL(route.request().url()); if (url.protocol.startsWith('http') && !['127.0.0.1', 'localhost', supabaseHost].includes(url.hostname)) { external.push(url.href); return route.abort(); } return route.continue(); });
 page.on('pageerror', error => errors.push(error.message));
 try {
+  await page.goto(`${base}/auth/login`);
+  await page.getByLabel('Email address').fill(testEmail);
+  await page.getByLabel('Password').fill(testPassword);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('heading', { name: 'Command Center', exact: true }).waitFor();
   const source = await readFile('../backend/data/replays/normal-benchmark.csv', 'utf8');
   // Real benchmark features + documentation-only IPs/times to test optional topology.
   // These extra context fields are test fixtures, not captured network metadata.
@@ -160,6 +169,14 @@ try {
   console.log(JSON.stringify({ checks, violations, pageErrors: errors }, null, 2));
   assert.equal(violations.length, 0, 'Accessibility violations must be fixed');
 } finally {
-  for (const id of created) await page.request.delete(`${base}/api/v1/analyses/${id}`).catch(() => {});
+  const token = await page.evaluate(() => {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith('sb-') || !key.endsWith('-auth-token')) continue;
+      try { return JSON.parse(localStorage.getItem(key) || '{}').access_token || null; } catch { return null; }
+    }
+    return null;
+  }).catch(() => null);
+  for (const id of created) await page.request.delete(`${base}/api/v1/analyses/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} }).catch(() => {});
   await browser.close();
 }

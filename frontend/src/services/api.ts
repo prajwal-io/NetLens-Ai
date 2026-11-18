@@ -124,11 +124,14 @@ function analysisResponse(body: unknown): Analysis {
 }
 
 function upload<T>(path: string, file: File, validate: (body: unknown) => T, options: { signal?: AbortSignal; onProgress?: (percent: number) => void } = {}): Promise<T> {
-  return new Promise((resolve, reject) => {
+  return getAccessToken().then(token => {
+    if (!token) throw new ApiError('Sign in to validate or analyze traffic.', 401);
+    return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const abort = () => xhr.abort();
     const clean = () => options.signal?.removeEventListener('abort', abort);
     xhr.open('POST', base + path);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.timeout = 90000;
     xhr.upload.onprogress = (event) => { if (event.lengthComputable) options.onProgress?.(Math.min(100, Math.round(event.loaded / event.total * 100))); };
     xhr.upload.onload = () => options.onProgress?.(100);
@@ -139,6 +142,7 @@ function upload<T>(path: string, file: File, validate: (body: unknown) => T, opt
     if (options.signal?.aborted) { reject(new DOMException('Request cancelled.', 'AbortError')); return; }
     options.signal?.addEventListener('abort', abort, { once: true });
     const data = new FormData(); data.append('file', file); xhr.send(data);
+    });
   });
 }
 
@@ -180,7 +184,10 @@ export interface HistoryPage { items: AnalysisSummary[]; total: number; limit: n
 
 async function request(path: string, options: RequestInit = {}, timeoutMs = 90000): Promise<unknown> {
   try {
-    const response = await fetch(base + path, { ...options, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
+    const headers = new Headers(options.headers);
+    const token = await getAccessToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const response = await fetch(base + path, { ...options, headers, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
     if (response.status === 204) return null;
     return decode(await response.text(), response.status);
   } catch (error) {
@@ -192,7 +199,9 @@ async function request(path: string, options: RequestInit = {}, timeoutMs = 9000
 
 export async function downloadReport(id: string, format: 'csv' | 'pdf') {
   try {
-    const response = await fetch(`${base}/analyses/${encodeURIComponent(id)}/${format === 'csv' ? 'export.csv' : 'report.pdf'}`, { signal: AbortSignal.timeout(90000) });
+    const token = await getAccessToken();
+    if (!token) throw new ApiError('Sign in to download analysis reports.', 401);
+    const response = await fetch(`${base}/analyses/${encodeURIComponent(id)}/${format === 'csv' ? 'export.csv' : 'report.pdf'}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(90000) });
     if (!response.ok) { decode(await response.text(), response.status); return; }
     const url = URL.createObjectURL(await response.blob());
     const link = document.createElement('a'); link.href = url; link.download = `netsight-${id}.${format}`;
@@ -272,3 +281,5 @@ export const api = {
     return upload('/traffic/analyze', file, analysisResponse, options);
   },
 };
+import { getAccessToken } from '../auth/AuthContext';
+

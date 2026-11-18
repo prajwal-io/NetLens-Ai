@@ -1,6 +1,6 @@
 # Offline faculty demonstration
 
-This runbook keeps the demo on one Windows laptop and does not require internet after preparation. The application uses the saved Random Forest v4 model and bundled historical UNSW-NB15 excerpts.
+This runbook keeps the demo on one Windows laptop. Use the local Supabase Auth stack for sign-in and SQLite for user-owned history. Prepare the containers and evaluated Random Forest v4 model before the presentation; see [authentication setup](auth-and-deployment.md).
 
 ## Prepare once, while online
 
@@ -29,9 +29,15 @@ Dataset preparation and dependency installation need an internet connection. Kee
 
 ## Start offline
 
-Open two PowerShell terminals from the project root.
+Start the local Supabase containers first. The stack, migrations, demo account, and environment files must already be prepared as described in [authentication setup](auth-and-deployment.md). Keep three PowerShell terminals open from the project root.
 
 Terminal 1:
+
+```powershell
+supabase start
+```
+
+Terminal 2:
 
 ```powershell
 cd backend
@@ -39,14 +45,14 @@ cd backend
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Terminal 2:
+Terminal 3:
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Confirm the backend and model status are connected. Optional preflight from a third terminal:
+Open `http://127.0.0.1:5173` and sign in with the prepared local demo account. Confirm the backend and model status are connected. Optional preflight from a fourth terminal:
 
 ```powershell
 cd backend

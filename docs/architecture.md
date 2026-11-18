@@ -1,6 +1,6 @@
 # NetSight AI architecture
 
-React and TypeScript call the FastAPI service through Vite's same-origin `/api` proxy during local development. FastAPI separates routing, response schemas, CSV validation, model loading/inference, configuration, saved history, historical replay, report generation, and SQLite persistence. Model training and evaluation run as explicit commands outside the request path.
+React and TypeScript call FastAPI through Vite's same-origin `/api` proxy during local development. Supabase Auth signs users in; FastAPI verifies each access token before allowing analysis, replay, history, investigation, or report requests. FastAPI separates routing, response schemas, CSV validation, model loading/inference, configuration, saved history, historical replay, and report generation. Model training and evaluation run as explicit commands outside the request path.
 
 ```text
 UNSW-NB15 train/test CSVs
@@ -22,17 +22,22 @@ Publish evaluated active artifact
         |
         +-----------------------------+
                                       |
-User CSV or bundled replay --> React API client --> FastAPI validation
+User signs in --> Supabase Auth --> React session
+User CSV or bundled replay --> React API client + bearer token --> FastAPI auth and validation
                                       |
                                       v
                              Evaluated model inference
                                       |
                                       v
-                    Normal / malicious + score --> SQLite snapshot
+                    Normal / malicious + score --> owner-scoped analysis store
                                       |
                     +-----------------+----------------+
                     v                                  v
               Dashboard / UI                   Saved CSV / PDF exports
+                                      |
+                         +------------+-------------+
+                         v                          v
+                Local SQLite (demo)       Supabase Postgres + RLS (hosted)
 ```
 
 ## API endpoints
@@ -72,9 +77,11 @@ The default `python -m ml.train` writes `netsight-candidate.joblib`, leaving the
 
 Actual scores, confusion matrices, overlap counts, and limitations are recorded in [model-evaluation.md](model-evaluation.md). `malicious_score` is an uncalibrated `predict_proba` value for benchmark class 1. It is not attack confidence or proof of an incident.
 
-## Persistence and boundaries
+## Authentication, persistence, and boundaries
 
-SQLite stores immutable analysis snapshots and per-flow features, plus reversible simulated IPS decisions keyed by analysis and row. Deleting an analysis cascades to its flow records and decisions. The browser keeps the selected analysis ID only; refresh restores it from the backend and reloads the decisions. A shared store drives Command Center, Network Pulse, Threat Investigation, and Reports. History summaries are paginated; prediction tables render 50 rows at a time and fetch individual flow features on demand. Model Lab remains an optional metadata view.
+Health and model metadata are public. Analysis, replay, history, flow investigation, analyst decisions, and exports require a valid Supabase access token. FastAPI verifies the token with Supabase Auth and derives identity only from the verified user ID. Local demos use SQLite and owner-filter every query; existing ownerless rows stay hidden. Hosted storage uses Supabase Postgres through PostgREST with the caller's token and publishable key, so RLS enforces `auth.uid() = user_id`. The `save_analysis` security-invoker RPC saves each snapshot and its features in one transaction. The migration is in [`supabase/migrations`](../supabase/migrations/).
+
+Both stores keep immutable analysis snapshots and per-flow features, plus reversible simulated IPS decisions keyed by analysis and row. Deleting an analysis cascades to its flow records and decisions. The browser keeps the selected analysis ID only; refresh restores it from the backend and reloads the decisions. A shared store drives Command Center, Network Pulse, Threat Investigation, and Reports. History summaries are paginated; prediction tables render 50 rows at a time and fetch individual flow features on demand. Model Lab remains an optional metadata view.
 
 Historical replay scenarios are small hash-verified excerpts of the existing official UNSW-NB15 holdout. Uploads and replays call the same validation, ordered features, fitted preprocessing, model, and persistence service. Playback is a sequential demonstration rate, not reconstructed capture timing. Ground-truth labels in the source never enter inference. Replay requests run in FastAPI worker threads.
 

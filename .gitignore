@@ -9,6 +9,8 @@ __pycache__/
 *.db-wal
 *.db-shm
 .env
+.env.*.local
+supabase/.temp/
 test-results/
 .pytest-tmp/
 backend/.pytest-workspace-qa/
