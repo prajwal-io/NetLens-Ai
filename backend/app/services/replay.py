@@ -12,7 +12,10 @@ REPLAY_ROOT = Path(__file__).resolve().parents[2] / "data" / "replays"
 
 def list_scenarios() -> list[dict]:
     try:
-        scenarios = json.loads((REPLAY_ROOT / "manifest.json").read_text(encoding="utf-8"))["scenarios"]
+        manifest = json.loads((REPLAY_ROOT / "manifest.json").read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("Invalid replay manifest")
+        scenarios = manifest["scenarios"]
         if not isinstance(scenarios, list) or not scenarios:
             raise ValueError("Empty replay manifest")
         for item in scenarios:

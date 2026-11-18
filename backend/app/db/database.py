@@ -29,4 +29,10 @@ def initialize():
             row_id INTEGER NOT NULL, features TEXT NOT NULL,
             PRIMARY KEY(analysis_id, row_id))""")
 
+        connection.execute("""CREATE TABLE IF NOT EXISTS response_decisions (
+            analysis_id TEXT NOT NULL REFERENCES analyses(id) ON DELETE CASCADE,
+            row_id INTEGER NOT NULL, decision TEXT NOT NULL CHECK(decision IN ('simulated_block', 'dismissed')),
+            decided_at TEXT NOT NULL, PRIMARY KEY(analysis_id, row_id))""")
+        connection.execute("INSERT OR IGNORE INTO schema_version(version) VALUES (3)")
+
         connection.execute("CREATE INDEX IF NOT EXISTS analyses_created ON analyses(created_at DESC, id DESC)")

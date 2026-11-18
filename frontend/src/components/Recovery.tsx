@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+﻿import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 export class ErrorBoundary extends Component<{children:ReactNode;resetKey:string},{failed:boolean}>{

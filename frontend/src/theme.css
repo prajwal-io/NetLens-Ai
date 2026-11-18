@@ -10,9 +10,17 @@
   --signal-red: #f36f7b;
   --signal-green: #43c9a2;
   --border: #293345;
+  --border-muted: #263346;
   --surface: #101722;
   --surface-raised: #151e2b;
   --surface-soft: #111b29;
+  --surface-hover: #172437;
+  --surface-overlay: rgb(16 23 34 / .78);
+  --text-subtle: #afbdd0;
+  --text-secondary: #a4b1c2;
+  --text-soft: #bdc8d7;
+  --link-muted: #a9c8ff;
+  --threat-soft: #ffc0c5;
   --chart-grid: #283447;
   --map-grid: #54647a;
   --map-ring: #2d3c51;
@@ -305,7 +313,7 @@ select:focus-visible,
 .closing-section,
 .pipeline>div {
   background: #111a27;
-  border: 1px solid #263346;
+  border: 1px solid var(--border-muted);
 }
 
 .flow-paper .paper-heading,
@@ -415,7 +423,7 @@ select:focus-visible,
 .metrics small,
 .workspace-main .metrics p,
 .workspace-main .metrics small {
-  color: #a4b1c2;
+  color: var(--text-secondary);
 }
 
 .metrics>div:nth-child(2) strong {
@@ -470,7 +478,7 @@ select:focus-visible,
 .workspace-main td,
 .workspace-main th,
 td {
-  border-color: #263346;
+  border-color: var(--border-muted);
 }
 
 .chart-foot {
@@ -488,7 +496,7 @@ td {
 }
 
 .tag {
-  color: #bdc8d7;
+  color: var(--text-soft);
   background: #1d2735;
 }
 
@@ -607,7 +615,7 @@ td {
 
 .workspace-main .error,
 .error {
-  color: #ffc0c5;
+  color: var(--threat-soft);
   background: #341922;
 }
 
@@ -810,7 +818,7 @@ td {
 
 .dashboard-source-switch button.source-active {
   border-color: #5074aa;
-  background: #172437;
+  background: var(--surface-hover);
 }
 
 .dashboard-source-note {
@@ -995,7 +1003,7 @@ td {
   align-items: center;
   gap: 6px;
   min-height: 40px;
-  color: #a9c8ff;
+  color: var(--link-muted);
   font-size: 12px;
 }
 
@@ -1035,7 +1043,7 @@ td {
 }
 
 .replay-stage-index {
-  color: #a9c8ff;
+  color: var(--link-muted);
   font-size: 10px;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -1151,7 +1159,7 @@ td {
 
 .replay-sequence button[aria-pressed="true"] {
   border-color: #5074aa;
-  background: #172437;
+  background: var(--surface-hover);
 }
 
 @media (max-width: 760px) {
@@ -1366,7 +1374,7 @@ td {
   gap: 7px;
   min-height: 44px;
   margin: 0 24px 14px;
-  color: #a9c8ff;
+  color: var(--link-muted);
   font-size: 12px;
 }
 

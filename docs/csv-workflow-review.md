@@ -1,5 +1,7 @@
 # CSV upload and linked workflow review
 
+> **Historical verification snapshot:** The test counts, commands, and classification totals below describe an earlier v3-era run. They are not current release evidence. The active model is v4; use the [current release record](release-completion.md) and [v4 evaluation](model-evaluation.md) for verified status and metrics.
+
 The current inference contract is `unsw-nb15-flow-v1`: 42 specific features with their original UNSW-NB15 definitions and units. Supporting CSV syntax does not make arbitrary dataset schemas compatible with the trained model. Missing features are rejected; they are not silently fabricated or filled as entire missing columns.
 
 ## Supported inputs

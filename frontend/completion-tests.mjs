@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test';
+﻿import { chromium } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

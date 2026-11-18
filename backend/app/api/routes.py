@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Response
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.schemas.traffic import AnalysisResponse, AnalysisHistory, PredictionPreview, FeatureSchemaResponse, HealthResponse, ValidationResponse
+from app.schemas.traffic import AnalysisResponse, AnalysisHistory, PredictionPreview, FeatureSchemaResponse, HealthResponse, ValidationResponse, ResponseDecisionList, ResponseDecisionRequest, ResponseDecision
 from app.services.model_service import model_service
 from app.services.validation import validate_csv
 from app.services import history
@@ -69,14 +69,16 @@ def delete_analysis(analysis_id: str):
 @router.get("/analyses/{analysis_id}/export.csv")
 def export_csv(analysis_id: str):
     analysis = history.get(analysis_id)
-    return Response(csv_report(analysis), media_type="text/csv; charset=utf-8",
+    decisions = history.response_decisions(analysis_id)
+    return Response(csv_report(analysis, decisions), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="netsight-{analysis.analysis_id}.csv"'})
 
 
 @router.get("/analyses/{analysis_id}/report.pdf")
 def export_pdf(analysis_id: str):
     analysis = history.get(analysis_id)
-    return Response(pdf_report(analysis), media_type="application/pdf",
+    decisions = history.response_decisions(analysis_id)
+    return Response(pdf_report(analysis, decisions), media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="netsight-{analysis.analysis_id}.pdf"'})
 
 
@@ -96,3 +98,19 @@ def analyze_replay(replay_id: str):
 @router.get("/analyses/{analysis_id}/flows/{row_id}", response_model=PredictionPreview)
 def flow_detail(analysis_id: str, row_id: int):
     return history.flow_detail(analysis_id, row_id)
+
+
+@router.get("/analyses/{analysis_id}/response-decisions", response_model=ResponseDecisionList)
+def response_decisions(analysis_id: str):
+    return {"analysis_id": analysis_id, "items": history.response_decisions(analysis_id)}
+
+
+@router.put("/analyses/{analysis_id}/flows/{row_id}/response", response_model=ResponseDecision)
+def set_response_decision(analysis_id: str, row_id: int, request: ResponseDecisionRequest):
+    return history.set_response_decision(analysis_id, row_id, request.decision)
+
+
+@router.delete("/analyses/{analysis_id}/flows/{row_id}/response", status_code=204)
+def clear_response_decision(analysis_id: str, row_id: int):
+    history.clear_response_decision(analysis_id, row_id)
+    return Response(status_code=204)

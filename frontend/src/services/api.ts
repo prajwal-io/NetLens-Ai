@@ -54,6 +54,12 @@ export interface EvaluationMetrics {
   support: { normal: number; malicious: number };
   confusion_matrix: { labels: string[]; rows_actual_columns_predicted: number[][] };
 }
+export interface ThresholdPolicy {
+  objective: string;
+  maximum_validation_false_positive_rate: number;
+  selected_validation_false_positive_rate: number;
+  selected_validation_recall: number;
+}
 export interface ModelInfo {
   model_name: string;
   model_version: string;
@@ -68,6 +74,7 @@ export interface ModelInfo {
   feature_count_categorical: number;
   excluded_columns: string[];
   decision_threshold: number;
+  threshold_policy: ThresholdPolicy;
   score_definition: string;
   preprocessing: { numeric_missing_values: string; categorical_missing_values: string; categorical_encoding: string; missing_values_found: { training: number; test: number } };
   split: { strategy: string; random_state: number; train_rows: number; validation_rows: number; test_rows: number; fitted_rows: number; feature_signature_groups: { unique_feature_signatures: number; repeated_feature_signatures: number; conflicting_feature_signatures: number } };
@@ -83,11 +90,18 @@ export class ApiError extends Error {
   constructor(message: string, public status = 0) { super(message); this.name = 'ApiError'; }
 }
 
-function decode(text: string, status: number) {
-  let body: any;
-  try { body = JSON.parse(text); }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function decode(text: string, status: number): unknown {
+  let body: unknown;
+  try { body = JSON.parse(text) as unknown; }
   catch { throw new ApiError(status >= 400 ? 'Cannot reach NetSight API. Check that the backend is running on port 8000.' : 'The API returned an unreadable response. Please retry.', status); }
-  if (status < 200 || status >= 300) throw new ApiError(typeof body?.error?.message === 'string' ? body.error.message : 'The request could not be completed.', status);
+  if (status < 200 || status >= 300) {
+    const error = isRecord(body) && isRecord(body.error) ? body.error.message : undefined;
+    throw new ApiError(typeof error === 'string' ? error : 'The request could not be completed.', status);
+  }
   return body;
 }
 
@@ -101,9 +115,9 @@ function validationResponse(body: unknown): Validation {
 }
 
 function analysisResponse(body: unknown): Analysis {
-  const result = body as Analysis | null;
+  const result = isRecord(body) ? body as unknown as Analysis : null;
   const validFeatureValue = (value: unknown) => value === null || typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
-  if (!result || typeof result.analysis_id !== 'string' || !['uploaded_csv', 'historical_replay'].includes(result.source_type) || typeof result.filename !== 'string' || typeof result.model_version !== 'string' || !Number.isFinite(result.threshold) || result.threshold < 0 || result.threshold > 1 || !Number.isInteger(result.total_flows) || result.total_flows < 1 || !result.counts || !Number.isInteger(result.counts.normal) || !Number.isInteger(result.counts.malicious) || result.counts.normal + result.counts.malicious !== result.total_flows || !Array.isArray(result.predictions) || result.predictions.length !== result.total_flows || !result.predictions.every((prediction, index) => prediction && prediction.row_id === index + 1 && (prediction.label === 'normal' || prediction.label === 'malicious') && Number.isFinite(prediction.malicious_score) && prediction.malicious_score >= 0 && prediction.malicious_score <= 1) || !Array.isArray(result.preview) || result.preview.length > Math.min(5, result.total_flows) || !result.preview.every((row) => row && (row.label === 'normal' || row.label === 'malicious') && typeof row.features === 'object' && Object.values(row.features).every(validFeatureValue)) || typeof result.score_definition !== 'string' || typeof result.message !== 'string') {
+  if (!result || typeof result.analysis_id !== 'string' || !['uploaded_csv', 'historical_replay'].includes(result.source_type) || typeof result.filename !== 'string' || typeof result.model_version !== 'string' || !Number.isFinite(result.threshold) || result.threshold < 0 || result.threshold > 1 || !Number.isInteger(result.total_flows) || result.total_flows < 1 || !result.counts || !Number.isInteger(result.counts.normal) || !Number.isInteger(result.counts.malicious) || result.counts.normal + result.counts.malicious !== result.total_flows || !Array.isArray(result.predictions) || result.predictions.length !== result.total_flows || !result.predictions.every((prediction, index) => prediction && prediction.row_id === index + 1 && (prediction.label === 'normal' || prediction.label === 'malicious') && Number.isFinite(prediction.malicious_score) && prediction.malicious_score >= 0 && prediction.malicious_score <= 1) || !Array.isArray(result.preview) || result.preview.length > Math.min(5, result.total_flows) || !result.preview.every((row) => row && (row.label === 'normal' || row.label === 'malicious') && isRecord(row.features) && Object.values(row.features).every(validFeatureValue)) || typeof result.score_definition !== 'string' || typeof result.message !== 'string') {
     throw new ApiError('The analysis response was incomplete. Please retry.');
   }
   return result;
@@ -128,9 +142,31 @@ function upload<T>(path: string, file: File, validate: (body: unknown) => T, opt
   });
 }
 
-function isModelInfo(body: any): body is ModelInfo {
-  const metrics = body?.evaluation?.metrics;
-  return !!body && typeof body.model_name === 'string' && typeof body.model_version === 'string' && typeof body.algorithm === 'string' && typeof body.dataset?.name === 'string' && typeof body.dataset?.source === 'string' && Array.isArray(body.features) && Number.isInteger(body.feature_count) && body.features.length === body.feature_count && Array.isArray(body.numeric_features) && Array.isArray(body.categorical_features) && !!metrics && ['accuracy', 'balanced_accuracy', 'precision', 'recall', 'f1', 'average_precision', 'roc_auc'].every((key) => Number.isFinite(metrics[key])) && !!metrics.support && Number.isInteger(metrics.support.normal) && Number.isInteger(metrics.support.malicious) && !!metrics.confusion_matrix && Array.isArray(metrics.confusion_matrix.rows_actual_columns_predicted) && Number.isInteger(body.evaluation?.novel_feature_signature_evaluation?.rows) && Array.isArray(body.limitations);
+function isModelInfo(body: unknown): body is ModelInfo {
+  if (!isRecord(body)) return false;
+  const dataset = body.dataset;
+  const evaluation = body.evaluation;
+  const metrics = isRecord(evaluation) ? evaluation.metrics : undefined;
+  const support = isRecord(metrics) ? metrics.support : undefined;
+  const matrix = isRecord(metrics) ? metrics.confusion_matrix : undefined;
+  const novelty = isRecord(evaluation) ? evaluation.novel_feature_signature_evaluation : undefined;
+  const policy = body.threshold_policy;
+  return typeof body.model_name === 'string' && typeof body.model_version === 'string' && typeof body.algorithm === 'string' && isRecord(dataset) && typeof dataset.name === 'string' && typeof dataset.source === 'string' && Array.isArray(body.features) && Number.isInteger(body.feature_count) && body.features.length === body.feature_count && Array.isArray(body.numeric_features) && Array.isArray(body.categorical_features) && isRecord(policy) && typeof policy.objective === 'string' && ['maximum_validation_false_positive_rate', 'selected_validation_false_positive_rate', 'selected_validation_recall'].every((key) => typeof policy[key] === 'number' && Number.isFinite(policy[key]) && Number(policy[key]) >= 0 && Number(policy[key]) <= 1) && typeof body.decision_threshold === 'number' && Number.isFinite(body.decision_threshold) && body.decision_threshold >= 0 && body.decision_threshold <= 1 && isRecord(metrics) && ['accuracy', 'balanced_accuracy', 'precision', 'recall', 'f1', 'average_precision', 'roc_auc'].every((key) => Number.isFinite(metrics[key])) && isRecord(support) && Number.isInteger(support.normal) && Number.isInteger(support.malicious) && isRecord(matrix) && Array.isArray(matrix.rows_actual_columns_predicted) && isRecord(novelty) && Number.isInteger(novelty.rows) && Array.isArray(body.limitations);
+}
+
+function isResponseDecision(value: unknown): value is ResponseDecision {
+  const item = value as ResponseDecision | null;
+  return !!item && typeof item.analysis_id === 'string' && Number.isInteger(item.row_id) && item.row_id > 0
+    && (item.decision === 'simulated_block' || item.decision === 'dismissed')
+    && typeof item.decided_at === 'string' && Number.isFinite(Date.parse(item.decided_at));
+}
+
+function isPredictionPreview(value: unknown): value is PredictionPreview {
+  return isRecord(value) && Number.isInteger(value.row_id) && Number(value.row_id) > 0
+    && (value.label === 'normal' || value.label === 'malicious')
+    && Number.isFinite(value.malicious_score) && Number(value.malicious_score) >= 0 && Number(value.malicious_score) <= 1
+    && isRecord(value.features) && Object.values(value.features).every((feature) => feature === null || typeof feature === 'string' || (typeof feature === 'number' && Number.isFinite(feature)))
+    && ['source', 'destination', 'timestamp'].every((key) => value[key] === undefined || value[key] === null || typeof value[key] === 'string');
 }
 
 
@@ -138,12 +174,13 @@ export interface AnalysisSummary {
   analysis_id: string; filename: string; created_at: string; source_type: Analysis['source_type'];
   model_version: string; total_flows: number; counts: Analysis['counts'];
 }
+export interface ResponseDecision { analysis_id: string; row_id: number; decision: 'simulated_block' | 'dismissed'; decided_at: string }
 export interface ReplayScenario { id: string; title: string; description: string; rows: number; dataset: string; timing: string }
 export interface HistoryPage { items: AnalysisSummary[]; total: number; limit: number; offset: number }
 
-async function request(path: string, options: RequestInit = {}) {
+async function request(path: string, options: RequestInit = {}, timeoutMs = 90000): Promise<unknown> {
   try {
-    const response = await fetch(base + path, { ...options, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000) });
+    const response = await fetch(base + path, { ...options, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
     if (response.status === 204) return null;
     return decode(await response.text(), response.status);
   } catch (error) {
@@ -154,54 +191,77 @@ async function request(path: string, options: RequestInit = {}) {
 }
 
 export async function downloadReport(id: string, format: 'csv' | 'pdf') {
-  const response = await fetch(`${base}/analyses/${encodeURIComponent(id)}/${format === 'csv' ? 'export.csv' : 'report.pdf'}`, { signal: AbortSignal.timeout(90000) });
-  if (!response.ok) { decode(await response.text(), response.status); return; }
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement('a'); link.href = url; link.download = `netsight-${id}.${format}`;
-  document.body.append(link); link.click(); link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  try {
+    const response = await fetch(`${base}/analyses/${encodeURIComponent(id)}/${format === 'csv' ? 'export.csv' : 'report.pdf'}`, { signal: AbortSignal.timeout(90000) });
+    if (!response.ok) { decode(await response.text(), response.status); return; }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a'); link.href = url; link.download = `netsight-${id}.${format}`;
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    if (error instanceof TypeError) throw new ApiError('Cannot reach NetSight API. Check the backend connection and retry.');
+    if (error instanceof DOMException && error.name === 'TimeoutError') throw new ApiError('The report download timed out. Please retry.');
+    throw error;
+  }
 }
 
 export const api = {
   async history(offset = 0, signal?: AbortSignal): Promise<HistoryPage> {
     const body = await request(`/analyses?limit=10&offset=${offset}`, { signal });
-    if (!body || !Array.isArray(body.items) || !Number.isInteger(body.total)) throw new ApiError('Analysis history was incomplete.');
-    return body;
+    if (!isRecord(body) || !Array.isArray(body.items) || !Number.isInteger(body.total) || !Number.isInteger(body.limit) || !Number.isInteger(body.offset)
+      || !body.items.every((item) => isRecord(item) && typeof item.analysis_id === 'string' && typeof item.filename === 'string' && typeof item.created_at === 'string' && (item.source_type === 'uploaded_csv' || item.source_type === 'historical_replay') && typeof item.model_version === 'string' && Number.isInteger(item.total_flows) && isRecord(item.counts) && Number.isInteger(item.counts.normal) && Number.isInteger(item.counts.malicious))) {
+      throw new ApiError('Analysis history was incomplete.');
+    }
+    return body as unknown as HistoryPage;
   },
   async analysis(id: string, signal?: AbortSignal): Promise<Analysis> {
     return analysisResponse(await request(`/analyses/${encodeURIComponent(id)}`, { signal }));
   },
   async deleteAnalysis(id: string): Promise<void> { await request(`/analyses/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
-  async replays(signal?: AbortSignal): Promise<ReplayScenario[]> { return (await request('/replays', { signal })).items; },
+  async replays(signal?: AbortSignal): Promise<ReplayScenario[]> {
+    const body = await request('/replays', { signal });
+    if (!isRecord(body) || !Array.isArray(body.items) || !body.items.every((item) => isRecord(item) && typeof item.id === 'string' && typeof item.title === 'string' && typeof item.description === 'string' && Number.isInteger(item.rows) && typeof item.dataset === 'string' && typeof item.timing === 'string')) {
+      throw new ApiError('The replay scenario list was incomplete. Please retry.');
+    }
+    return body.items as ReplayScenario[];
+  },
   async replay(id: string, signal?: AbortSignal): Promise<Analysis> {
     return analysisResponse(await request(`/replays/${encodeURIComponent(id)}/analyze`, { method: 'POST', signal }));
   },
   async flow(id: string, row: number, signal?: AbortSignal): Promise<PredictionPreview> {
-    return request(`/analyses/${encodeURIComponent(id)}/flows/${row}`, { signal });
-  },
-  async health(signal?: AbortSignal): Promise<Health> {
-    try {
-      const response = await fetch(base + '/health', { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
-      const body = decode(await response.text(), response.status) as Health;
-      if (!body || body.status !== 'ok' || typeof body.service !== 'string' || typeof body.model_loaded !== 'boolean' || (body.model_version !== null && typeof body.model_version !== 'string')) throw new ApiError('The backend returned an invalid health response.');
-      return body;
-    } catch (error) {
-      if (error instanceof TypeError) throw new ApiError('Cannot reach NetSight API. Check that the backend is running on port 8000.');
-      if (error instanceof DOMException && error.name === 'TimeoutError') throw new ApiError('The API request timed out. Please retry.');
-      throw error;
-    }
-  },
-  async featureSchema(signal?: AbortSignal): Promise<FeatureSchema> {
-    const response = await fetch(base + '/model/schema', { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
-    const body = decode(await response.text(), response.status) as FeatureSchema;
-    if (!body || typeof body.schema_name !== 'string' || !Number.isInteger(body.feature_count) || body.feature_count < 1 || !Array.isArray(body.features) || body.features.length !== body.feature_count || !Array.isArray(body.numeric_features) || !Array.isArray(body.categorical_features) || !Array.isArray(body.excluded_columns) || !body.features.every((feature) => typeof feature === 'string')) {
-      throw new ApiError('The model input schema response was incomplete. Please retry.');
-    }
+    const body = await request(`/analyses/${encodeURIComponent(id)}/flows/${row}`, { signal });
+    if (!isPredictionPreview(body)) throw new ApiError('The flow details were incomplete. Please retry.');
     return body;
   },
+  async responseDecisions(id: string, signal?: AbortSignal): Promise<ResponseDecision[]> {
+    const body = await request(`/analyses/${encodeURIComponent(id)}/response-decisions`, { signal }) as { analysis_id?: unknown; items?: unknown } | null;
+    if (!body || body.analysis_id !== id || !Array.isArray(body.items) || !body.items.every((item) => isResponseDecision(item) && item.analysis_id === id)) {
+      throw new ApiError('The analyst response list was incomplete. Please retry.');
+    }
+    return body.items;
+  },
+  async setResponseDecision(id: string, row: number, decision: ResponseDecision['decision']): Promise<ResponseDecision> {
+    const body = await request(`/analyses/${encodeURIComponent(id)}/flows/${row}/response`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision }) });
+    if (!isResponseDecision(body) || body.analysis_id !== id || body.row_id !== row || body.decision !== decision) throw new ApiError('The analyst response could not be saved. Please retry.');
+    return body;
+  },
+  async clearResponseDecision(id: string, row: number): Promise<void> {
+    await request(`/analyses/${encodeURIComponent(id)}/flows/${row}/response`, { method: 'DELETE' });
+  },
+  async health(signal?: AbortSignal): Promise<Health> {
+    const body = await request('/health', { signal }, 15000);
+    if (!isRecord(body) || body.status !== 'ok' || typeof body.service !== 'string' || typeof body.model_loaded !== 'boolean' || (body.model_version !== null && typeof body.model_version !== 'string')) throw new ApiError('The backend returned an invalid health response.');
+    return body as unknown as Health;
+  },
+  async featureSchema(signal?: AbortSignal): Promise<FeatureSchema> {
+    const body = await request('/model/schema', { signal }, 15000);
+    if (!isRecord(body) || typeof body.schema_name !== 'string' || !Number.isInteger(body.feature_count) || Number(body.feature_count) < 1 || !Array.isArray(body.features) || body.features.length !== body.feature_count || !Array.isArray(body.numeric_features) || !Array.isArray(body.categorical_features) || !Array.isArray(body.excluded_columns) || !body.features.every((feature) => typeof feature === 'string')) {
+      throw new ApiError('The model input schema response was incomplete. Please retry.');
+    }
+    return body as unknown as FeatureSchema;
+  },
   async modelInfo(signal?: AbortSignal): Promise<ModelInfo> {
-    const response = await fetch(base + '/model/info', { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
-    const body = decode(await response.text(), response.status);
+    const body = await request('/model/info', { signal }, 15000);
     if (!isModelInfo(body)) throw new ApiError('The model information response was incomplete. Please retry.');
     return body;
   },

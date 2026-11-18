@@ -68,7 +68,58 @@ class ModelService:
                     raise ValueError("The model artifact is missing its version.")
                 if tuple(metadata.get("features", ())) != FEATURE_COLUMNS:
                     raise ValueError("Model metadata feature order does not match UNSW-NB15 flow schema v1.")
-                if not isinstance(evaluation.get("metrics"), dict) or evaluation.get("rows", 0) < 1:
+                metrics = evaluation.get("metrics")
+                evaluation_rows = evaluation.get("rows")
+                if not isinstance(metrics, dict) or type(evaluation_rows) is not int or evaluation_rows < 1:
+                    raise ValueError("The model artifact contains incomplete held-out evaluation metadata.")
+                metric_names = (
+                    "accuracy", "balanced_accuracy", "precision", "recall", "f1",
+                    "average_precision", "roc_auc", "false_positive_rate", "specificity",
+                )
+                if any(
+                    not isinstance(metrics.get(name), (int, float))
+                    or not np.isfinite(metrics[name])
+                    or not 0 <= metrics[name] <= 1
+                    for name in metric_names
+                ):
+                    raise ValueError("The model artifact contains incomplete held-out evaluation metrics.")
+                support = metrics.get("support")
+                confusion = metrics.get("confusion_matrix")
+                matrix = confusion.get("rows_actual_columns_predicted") if isinstance(confusion, dict) else None
+                if (
+                    not isinstance(support, dict)
+                    or type(support.get("normal")) is not int
+                    or type(support.get("malicious")) is not int
+                    or support["normal"] < 1
+                    or support["malicious"] < 1
+                    or support["normal"] + support["malicious"] != evaluation_rows
+                    or not isinstance(confusion, dict)
+                    or confusion.get("labels") != ["normal", "malicious"]
+                    or not isinstance(matrix, list)
+                    or len(matrix) != 2
+                    or any(not isinstance(row, list) or len(row) != 2 for row in matrix)
+                    or any(type(value) is not int or value < 0 for row in matrix for value in row)
+                    or sum(matrix[0]) != support["normal"]
+                    or sum(matrix[1]) != support["malicious"]
+                ):
+                    raise ValueError("The model artifact contains incomplete held-out class support or confusion matrix.")
+                evaluation_threshold = evaluation.get("threshold")
+                if (
+                    not isinstance(evaluation_threshold, (int, float))
+                    or not np.isfinite(evaluation_threshold)
+                    or not 0 <= evaluation_threshold <= 1
+                    or not np.isclose(evaluation_threshold, threshold)
+                ):
+                    raise ValueError("The held-out evaluation threshold does not match the saved decision threshold.")
+                novelty = evaluation.get("novel_feature_signature_evaluation")
+                if (
+                    not isinstance(evaluation.get("split"), str)
+                    or not evaluation["split"].strip()
+                    or not isinstance(novelty, dict)
+                    or type(novelty.get("rows")) is not int
+                    or novelty["rows"] < 0
+                    or not isinstance(novelty.get("definition"), str)
+                ):
                     raise ValueError("The model artifact contains incomplete held-out evaluation metadata.")
                 if not callable(getattr(pipeline, "predict_proba", None)):
                     raise ValueError("The model artifact is missing its probability pipeline.")

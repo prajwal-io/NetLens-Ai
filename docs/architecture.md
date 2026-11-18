@@ -46,6 +46,9 @@ Base URL: `http://127.0.0.1:8000/api/v1`
 | GET | `/model/info` | Dataset, features, preprocessing, splits, and real evaluation metrics |
 | POST | `/traffic/validate` | Validate required CSV columns, rows, values, and return a text preview; no predictions |
 | POST | `/traffic/analyze` | Run the saved evaluated model; return `normal`/`malicious` labels and `malicious_score` values |
+| GET | `/analyses/{id}/response-decisions` | Read saved, per-flow analyst decisions |
+| PUT | `/analyses/{id}/flows/{row_id}/response` | Approve a simulated block or dismiss an alert for a malicious classification |
+| DELETE | `/analyses/{id}/flows/{row_id}/response` | Undo the saved simulated decision |
 
 Missing or invalid model artifacts do not prevent the health or schema routes from starting. `/traffic/analyze` and `/model/info` return HTTP 503 until a trained, evaluated artifact is installed. Errors use `{ "error": { "code": ..., "message": ... } }`.
 
@@ -71,13 +74,13 @@ Actual scores, confusion matrices, overlap counts, and limitations are recorded 
 
 ## Persistence and boundaries
 
-SQLite stores immutable analysis snapshots and per-flow features in one transaction. Foreign-key deletion removes flow records with their parent analysis. The browser keeps the selected analysis ID only; refresh restores it from the backend. A shared store drives Command Center, Network Pulse, Threat Investigation, and Reports. History summaries are paginated; prediction tables render 50 rows at a time and fetch individual flow features on demand. Model Lab remains an optional metadata view.
+SQLite stores immutable analysis snapshots and per-flow features, plus reversible simulated IPS decisions keyed by analysis and row. Deleting an analysis cascades to its flow records and decisions. The browser keeps the selected analysis ID only; refresh restores it from the backend and reloads the decisions. A shared store drives Command Center, Network Pulse, Threat Investigation, and Reports. History summaries are paginated; prediction tables render 50 rows at a time and fetch individual flow features on demand. Model Lab remains an optional metadata view.
 
 Historical replay scenarios are small hash-verified excerpts of the existing official UNSW-NB15 holdout. Uploads and replays call the same validation, ordered features, fitted preprocessing, model, and persistence service. Playback is a sequential demonstration rate, not reconstructed capture timing. Ground-truth labels in the source never enter inference. Replay requests run in FastAPI worker threads.
 
 Optional context is separate from model input: `source_ip` / `src_ip` / `srcip`, `destination_ip` / `dst_ip` / `dstip`, and `timestamp` / `start_time`. Addresses must be valid IPv4 or IPv6. Times must be timezone-aware ISO 8601. Invalid recognized context is rejected, not silently drawn. Only provided source/destination pairs form topology connections. No live capture is implemented.
 
-CSV and PDF endpoints read the saved snapshot, so later model changes cannot change past reports. CSV contains all predictions and available network context; PDF contains dataset/source/time/version/threshold/counts, model context and every classification. PDF generation runs in a worker thread through a synchronous FastAPI route. Reports are generated on demand, not stored as duplicate files.
+CSV and PDF endpoints read the saved snapshot and its response decisions, so later model changes cannot change past reports. CSV contains all predictions, available network context, and any saved simulated action; PDF includes the action summary and every classification. Reports explicitly state that no live traffic was blocked. PDF generation runs in a worker thread through a synchronous FastAPI route. Reports are generated on demand, not stored as duplicate files.
 
 ## Saved workflow endpoints
 
@@ -86,6 +89,9 @@ CSV and PDF endpoints read the saved snapshot, so later model changes cannot cha
 | GET | `/analyses?limit=20&offset=0` | Paginated summaries (maximum 100 per page) |
 | GET | `/analyses/{id}` | Restore a saved analysis |
 | GET | `/analyses/{id}/flows/{row_id}` | Classification, context and original validated model features |
+| GET | `/analyses/{id}/response-decisions` | Saved analyst response decisions for the analysis |
+| PUT | `/analyses/{id}/flows/{row_id}/response` | Save a simulated block approval or alert dismissal |
+| DELETE | `/analyses/{id}/flows/{row_id}/response` | Undo a saved simulated decision |
 | DELETE | `/analyses/{id}` | Delete a snapshot and its feature records |
 | GET | `/analyses/{id}/export.csv` | Export saved classifications and context |
 | GET | `/analyses/{id}/report.pdf` | Export a paginated PDF |

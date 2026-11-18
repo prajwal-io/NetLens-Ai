@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Health } from '../services/api';
 export function useBackendStatus(){
  const [health,setHealth]=useState<Health|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[lastChecked,setLastChecked]=useState<Date|null>(null),[lastGood,setLastGood]=useState<Date|null>(null),[online,setOnline]=useState(navigator.onLine);

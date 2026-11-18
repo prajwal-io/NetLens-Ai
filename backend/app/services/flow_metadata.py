@@ -22,6 +22,7 @@ def read_metadata(content: bytes) -> list[dict]:
                 for key, aliases in ALIASES.items()}
     result = []
     for values in reader:
+        line = reader.line_num
         if not values or (len(values) == 1 and not values[0].strip()):
             continue
         item = {}
@@ -38,6 +39,6 @@ def read_metadata(content: bytes) -> list[dict]:
                 else:
                     item[key] = str(ip_address(value))
             except ValueError:
-                raise HTTPException(422, detail=f"Row {len(result) + 2}: invalid {key}; use an IP address or timezone-aware ISO 8601 timestamp.")
+                raise HTTPException(422, detail=f"Row {line}: invalid {key}; use an IP address or timezone-aware ISO 8601 timestamp.")
         result.append(item)
     return result
