@@ -150,7 +150,7 @@ def test_analysis_endpoints_require_a_bearer_session(client):
             assert response.headers["www-authenticate"] == "Bearer"
         for method, path in (
             ("post", "/api/v1/traffic/validate"), ("post", "/api/v1/traffic/analyze"),
-            ("post", "/api/v1/traffic/pcap/analyze"), ("post", "/api/v1/url/reputation"),
+            ("post", "/api/v1/traffic/pcap/analyze"), ("post", "/api/v1/url/check"),
             ("post", "/api/v1/replays/demo/analyze"), ("put", "/api/v1/analyses/private/flows/1/response"),
             ("delete", "/api/v1/analyses/private"), ("delete", "/api/v1/analyses/private/flows/1/response"),
         ):
@@ -410,6 +410,32 @@ def test_upload_body_limit_rejects_invalid_or_oversized_content_length_without_r
         assert sent[0]["status"] == expected
 
 
+def test_url_check_requires_authenticated_supabase_session(client):
+    override = app.dependency_overrides.pop(require_user)
+    try:
+        response = client.post("/api/v1/url/check", json={"url": "https://example.com/"})
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+    finally:
+        app.dependency_overrides[require_user] = override
+
+
+def test_url_check_endpoint_returns_backend_model_probe_and_stages(client, monkeypatch):
+    from app.services import url_check
+
+    expected = {
+        "url": "https://example.com/", "host": "example.com",
+        "model": {"model_version": "test-url-model", "label": "no_strong_signal", "phishing_score": 0.1, "threshold": 0.5},
+        "probe": {"status": "reachable", "http_status": 200, "final_host": "example.com", "dns_address_count": 1, "redirects": []},
+        "findings": ["test evidence"], "stages": [{"name": "Evidence summary", "duration_ms": 0.1, "status": "complete"}],
+        "limitations": ["test limitation"],
+    }
+    monkeypatch.setattr(url_check, "check_url", lambda value: expected if value == expected["url"] else None)
+    response = client.post("/api/v1/url/check", json={"url": expected["url"]})
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
 def test_json_api_body_limit_applies_without_content_length():
     import asyncio
     from app.main import UploadBodyLimitMiddleware
@@ -429,7 +455,7 @@ def test_json_api_body_limit_applies_without_content_length():
     async def downstream(scope, receive, send):
         raise AssertionError("Oversized JSON reached FastAPI parsing")
 
-    scope = {"type": "http", "method": "POST", "path": "/api/v1/url/reputation", "headers": []}
+    scope = {"type": "http", "method": "POST", "path": "/api/v1/url/check", "headers": []}
     asyncio.run(UploadBodyLimitMiddleware(downstream, limit=1024, api_limit=5)(scope, receive, send))
     assert sent[0]["status"] == 413
 
@@ -585,74 +611,6 @@ def test_pcap_upload_rejects_invalid_files_and_packet_overflow(client, tmp_path,
     monkeypatch.setattr(settings, "max_capture_packets", 2)
     overflow = client.post("/api/v1/traffic/pcap/analyze", files={"file": ("many.pcap", _capture_file(tmp_path / "many.pcap"), "application/octet-stream")})
     assert overflow.status_code == 413
-
-
-def test_web_risk_is_optional_validated_and_provider_results_are_mapped(client, monkeypatch):
-    from app.services import reputation
-
-    monkeypatch.setattr(settings, "webrisk_api_key", None)
-    assert client.post("/api/v1/url/reputation", json={"url": "https://example.com/"}).status_code == 503
-    monkeypatch.setattr(settings, "webrisk_api_key", "test-key")
-    assert client.post("/api/v1/url/reputation", json={"url": "file:///etc/passwd"}).status_code == 422
-    requested = {}
-
-    class Response:
-        status_code = 200
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"threat": {"threatTypes": ["SOCIAL_ENGINEERING"], "expireTime": "2026-11-20T12:00:00Z"}}
-
-    class Client:
-        def __init__(self, **kwargs):
-            assert kwargs["follow_redirects"] is False
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def get(self, url, *, params):
-            requested.update(url=url, params=params)
-            return Response()
-
-    monkeypatch.setattr(reputation.httpx, "AsyncClient", Client)
-    response = client.post("/api/v1/url/reputation", json={"url": "https://example.com/login"})
-    assert response.status_code == 200
-    assert response.json() == {"provider": "Google Web Risk", "matched": True, "threat_types": ["SOCIAL_ENGINEERING"], "expires_at": "2026-11-20T12:00:00Z"}
-    assert requested["url"] == "https://webrisk.googleapis.com/v1/uris:search"
-    assert ("uri", "https://example.com/login") in requested["params"]
-
-
-def test_web_risk_403_reports_project_setup_requirements(client, monkeypatch):
-    from app.services import reputation
-
-    monkeypatch.setattr(settings, "webrisk_api_key", "test-key")
-
-    class Response:
-        status_code = 403
-
-    class Client:
-        def __init__(self, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def get(self, *args, **kwargs):
-            return Response()
-
-    monkeypatch.setattr(reputation.httpx, "AsyncClient", Client)
-    response = client.post("/api/v1/url/reputation", json={"url": "https://example.com/"})
-    assert response.status_code == 503
-    assert "billing is active" in response.json()["error"]["message"]
-    assert "test-key" not in response.text
 
 
 @pytest.mark.parametrize('delimiter', [',', ';', '\t', '|'])

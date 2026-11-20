@@ -1,0 +1,178 @@
+{
+  "model_version": "netsight-url-lr-phiusiil-v1",
+  "feature_order": [
+    "url_length",
+    "host_length",
+    "path_length",
+    "query_length",
+    "host_dot_count",
+    "subdomain_count",
+    "host_hyphen_count",
+    "host_digit_count",
+    "url_digit_ratio",
+    "special_char_count",
+    "special_char_ratio",
+    "url_entropy",
+    "host_entropy",
+    "https",
+    "ip_literal",
+    "punycode",
+    "path_depth",
+    "query_param_count",
+    "encoded_char_count",
+    "at_sign_count",
+    "suspicious_token_count",
+    "long_host_label_count"
+  ],
+  "mean": [
+    34.974924967890914,
+    21.459609101012184,
+    4.184116484437908,
+    2.091442679461499,
+    2.166820834636552,
+    1.1668208346365518,
+    0.2812622696630709,
+    0.8856251122986112,
+    0.028471951760203815,
+    6.246138591459316,
+    0.19451038346555855,
+    3.9583079904196046,
+    3.4694192556107795,
+    0.781398691679588,
+    0.0025820362150543357,
+    0.0006255448562245041,
+    0.23816622190871037,
+    0.05656522636072643,
+    0.02227338972110016,
+    0.008571295476778311,
+    0.04775436051347916,
+    0.04143901935861688
+  ],
+  "scale": [
+    37.943806827209194,
+    9.185176915976323,
+    16.717358164893653,
+    22.07993186795951,
+    0.6083561411542656,
+    0.6083561411542656,
+    0.7492504697235827,
+    2.782371591101645,
+    0.07074225319713913,
+    3.8918228131191537,
+    0.04085882540929363,
+    0.31204892217278757,
+    0.40314911246817087,
+    0.4132974429156983,
+    0.05074809655584344,
+    0.025003070808570532,
+    0.8250743318659118,
+    0.5240059348192184,
+    0.6283324455379428,
+    0.11253306591310878,
+    0.3211186300934898,
+    0.19953694717634934
+  ],
+  "coefficients": [
+    7.345758557549449,
+    3.094660716129419,
+    7.976302272409978,
+    1.1912316141600963,
+    -2.4967068154257293,
+    -2.4967068154257293,
+    -5.122970677076578,
+    1.581132400718883,
+    0.704342987184494,
+    21.568475775834415,
+    3.0673258778954597,
+    -1.1002760405326462,
+    1.4787466136266398,
+    -6.909704842918606,
+    -0.43532675992643927,
+    0.20886141836148314,
+    13.364038092617738,
+    1.2978998753048576,
+    -0.3177696504336839,
+    -0.09998944373327502,
+    0.7844834712732045,
+    -0.3819740247950568
+  ],
+  "intercept": 11.46508075107309,
+  "threshold": 0.05028067486195816,
+  "positive_class": "phishing",
+  "dataset": {
+    "name": "PhiUSIIL Phishing URL (Website)",
+    "source": "https://archive.ics.uci.edu/dataset/967/phiusil+phishing+url+dataset",
+    "doi": "10.1016/j.cose.2023.103545",
+    "license": "CC BY 4.0",
+    "sha256": "a236549cd369cd80bd478ff8e1779cbf44c58d5c3f79f7a51a1adbed7d06d1c6",
+    "rows": 235370,
+    "features_used": "22 URL lexical/structural features recomputed from the raw URL column; webpage-derived columns, Domain, FILENAME, and label are excluded from inference"
+  },
+  "split": {
+    "method": "20% domain-grouped test; remaining 80% split into 80% fit / 20% validation by domain",
+    "seed": 2026,
+    "fit_rows": 150269,
+    "validation_rows": 36943,
+    "test_rows": 48158,
+    "unique_domains": 220086
+  },
+  "threshold_policy": {
+    "objective": "maximize phishing recall subject to validation false-positive rate <= 5%",
+    "max_validation_fpr": 0.05
+  },
+  "validation_metrics": {
+    "rows": 36943,
+    "accuracy": 0.9666513277210839,
+    "precision": 0.9344774747165185,
+    "recall": 0.9894217665000974,
+    "f1": 0.9611650485436893,
+    "false_positive_rate": 0.049642425931085726,
+    "roc_auc": 0.9955475527404973,
+    "confusion_matrix": {
+      "labels": [
+        "legitimate",
+        "phishing"
+      ],
+      "rows_actual_columns_predicted": [
+        [
+          20465,
+          1069
+        ],
+        [
+          163,
+          15246
+        ]
+      ]
+    }
+  },
+  "test_metrics": {
+    "rows": 48158,
+    "accuracy": 0.9682918725860709,
+    "precision": 0.9398802074021098,
+    "recall": 0.9914187373284926,
+    "f1": 0.9649617952777586,
+    "false_positive_rate": 0.04990908753571561,
+    "roc_auc": 0.9964166724495105,
+    "confusion_matrix": {
+      "labels": [
+        "legitimate",
+        "phishing"
+      ],
+      "rows_actual_columns_predicted": [
+        [
+          25604,
+          1345
+        ],
+        [
+          182,
+          21027
+        ]
+      ]
+    }
+  },
+  "limitations": [
+    "This is a URL-only lexical model trained on the PhiUSIIL snapshot; live DNS/HTTP findings are separate evidence.",
+    "Test rows are grouped by dataset Domain, but a changed or unseen phishing campaign may behave differently.",
+    "The score is an uncalibrated model output, not a probability that a specific incident is confirmed."
+  ]
+}

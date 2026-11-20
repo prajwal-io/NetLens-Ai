@@ -12,18 +12,11 @@
 
 RLS is PostgreSQL authorization policy, not an application-side filter. Policies scope analysis, flow, and response-decision rows to `auth.uid()`. Table grants separately limit which operations each role can attempt: signed-in users can read their own data and delete their own analyses or decisions; direct client writes are revoked. The grant-hardening migration also removes `TRUNCATE` and other unneeded table privileges. Backend `service_role` writes bypass RLS, so its secret must stay server-side and API writes must use the ID from a verified Auth token. The pgTAP checks are in `supabase/tests/analysis_table_privileges_test.sql`.
 
-## URL reputation and packet captures
+## URL analysis and packet captures
 
-The URL page runs its structural and known-brand heuristics in the browser. Its optional `/api/v1/url/reputation` call uses Google Web Risk, requires backend-only `NETSIGHT_WEBRISK_API_KEY`, and sends the submitted URL to Google only after the signed-in user opts in. It does not fetch or follow the submitted URL. A provider miss is not proof of safety.
+The authenticated `/api/v1/url/check` endpoint validates a public HTTP/HTTPS URL, runs the separate URL-only logistic-regression model, resolves public DNS, then makes a bounded HTTP `HEAD` check. The probe pins the resolved public addresses, blocks private/reserved destinations, follows at most four redirects, accepts only ports 80/443, and never downloads a page body. The model uses 22 lexical features recomputed from the raw URL and was trained with domain-grouped splits on the [UCI PhiUSIIL dataset](https://archive.ics.uci.edu/dataset/967/phiusil+phishing+url+dataset); it is an investigation signal rather than a confirmed verdict. The model metrics and limitations travel with its JSON artifact.
 
-### Configure the Web Risk key
-
-1. In Google Cloud Console, select a project, enable billing, then enable **Web Risk API** (`webrisk.googleapis.com`).
-2. Open **APIs & Services → Credentials → Create credentials → API key**. Edit the key and restrict it to **Web Risk API**. Use an IP restriction only if your backend has a stable outbound IP; this is a server-side key, never a browser/referrer key.
-3. For local use, set `NETSIGHT_WEBRISK_API_KEY=<key>` in `backend/.env`, then restart FastAPI. For Render, add the variable under the service's **Environment** settings and redeploy. Do not put it in `frontend/.env.local`, a `VITE_*` variable, or source control.
-4. Sign in, open **URL Check Demo**, choose a sample URL, consent to sending it to Google, then select **Check Google Web Risk**. The documented test URL is `http://testsafebrowsing.appspot.com/s/malware.html`.
-
-Lookup calls have a monthly free tier and are billed above the quota; set an API quota and billing alert in Google Cloud before inviting users.
+The URL model is not the UNSW-NB15 flow model: a URL does not contain the 42 network-flow fields needed by the Random Forest. Packet-derived records likewise do not satisfy that flow contract and are not classified by it. Traffic Analyzer accepts `.pcap` and `.pcapng` up to 5 MiB; the parser caps work at 100,000 packets and 10,000 flows, keeps results in the response only, and extracts bounded TCP/UDP IPv4/IPv6 flow counters. The website cannot sniff a user's network interface; live capture requires a separately installed, permissioned sensor. The bundled capture is synthetic and uses documentation-only IP addresses.
 
 Traffic Analyzer accepts `.pcap` and `.pcapng` up to 5 MiB. The parser caps work at 100,000 packets and 10,000 flows, keeps results in the response only, and extracts bounded TCP/UDP IPv4/IPv6 flow counters. Packet-derived records do not match the Random Forest's 42-feature UNSW-NB15 contract, so the parser deliberately does not classify them with that model. The website cannot sniff a user's network interface; live capture requires a separately installed, permissioned sensor. The bundled `frontend/public/demo-capture.pcap` is synthetic and uses documentation-only IP addresses.
 
@@ -100,8 +93,6 @@ Configure the backend with:
 - `NETSIGHT_CORS_ORIGINS` as a JSON array containing only deployed Vercel origins, for example `["https://your-app.vercel.app"]`.
 - `NETSIGHT_MODEL_ARTIFACT_PATH` pointing to the evaluated `netsight-model.joblib` artifact.
 - `NETSIGHT_MODEL_ARTIFACT_URL` set to a private HTTPS download link for that artifact, and `NETSIGHT_MODEL_ARTIFACT_SHA256` set to its SHA-256 digest. The Render start command downloads the artifact and checks the digest before starting the API. Keep the URL private and valid for deploys/restarts; the artifact is too large for Render secret files and remains out of Git.
-- `NETSIGHT_WEBRISK_API_KEY` for optional live URL reputation checks. Keep it backend-only. The inspector sends the submitted URL to Google Web Risk only after the user opts in on the page; review Google's data handling, usage limits, and terms before enabling it.
-
 Never set a Supabase `service_role` or secret key in Vite variables or expose it to the browser. Backend writes use the secret key and must include the verified user ID; reads continue to use the caller's token under RLS. Vercel builds must be redeployed after changing `VITE_*` variables.
 
 ## Deployment limits

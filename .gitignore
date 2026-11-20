@@ -17,6 +17,7 @@ backend/.pytest-workspace-qa/
 *.tsbuildinfo
 /data/kagglehub-cache/
 /data/raw/unsw-nb15/
+/data/raw/phiusiil/
 /backend/ml/artifacts/
 *.joblib.tmp
 /data/qa/

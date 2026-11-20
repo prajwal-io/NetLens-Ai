@@ -188,7 +188,12 @@ export interface AnalysisSummary {
 }
 export interface ResponseDecision { analysis_id: string; row_id: number; decision: 'simulated_block' | 'dismissed'; decided_at: string }
 export interface ReplayScenario { id: string; title: string; description: string; rows: number; dataset: string; timing: string }
-export interface UrlReputation { provider: string; matched: boolean; threat_types: string[]; expires_at: string | null }
+export interface URLCheck {
+  url: string; host: string;
+  model: { model_version: string; label: 'phishing_signal' | 'no_strong_signal'; phishing_score: number; threshold: number };
+  probe: { status: 'reachable' | 'unreachable' | 'blocked' | 'redirect_limit'; http_status: number | null; final_host: string | null; dns_address_count: number; redirects: { status: number; from_host: string; to_host: string; cross_host: boolean }[] };
+  findings: string[]; stages: { name: string; duration_ms: number; status: string }[]; limitations: string[];
+}
 export interface CapturedFlow {
   source: string; destination: string; protocol: 'TCP' | 'UDP'; packets: number; captured_bytes: number;
   source_packets: number; destination_packets: number; source_bytes: number; destination_bytes: number;
@@ -288,10 +293,12 @@ export const api = {
   async clearResponseDecision(id: string, row: number): Promise<void> {
     await request(`/analyses/${encodeURIComponent(id)}/flows/${row}/response`, { method: 'DELETE' });
   },
-  async checkUrlReputation(url: string): Promise<UrlReputation> {
-    const body = await request('/url/reputation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
-    if (!isRecord(body) || body.provider !== 'Google Web Risk' || typeof body.matched !== 'boolean' || !Array.isArray(body.threat_types) || !body.threat_types.every(item => typeof item === 'string') || (body.expires_at !== null && typeof body.expires_at !== 'string')) throw new ApiError('The reputation response was incomplete. Please retry.');
-    return body as unknown as UrlReputation;
+  async checkUrl(url: string, signal?: AbortSignal): Promise<URLCheck> {
+    const body = await request('/url/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }), signal, }, 30000);
+    if (!isRecord(body) || typeof body.url !== 'string' || typeof body.host !== 'string' || !isRecord(body.model) || !isRecord(body.probe) || !Array.isArray(body.findings) || !body.findings.every(item => typeof item === 'string') || !Array.isArray(body.stages) || !Array.isArray(body.limitations)) throw new ApiError('The URL analysis response was incomplete. Please retry.');
+    const model = body.model; const probe = body.probe;
+    if (typeof model.model_version !== 'string' || !['phishing_signal', 'no_strong_signal'].includes(String(model.label)) || typeof model.phishing_score !== 'number' || typeof model.threshold !== 'number' || !['reachable', 'unreachable', 'blocked', 'redirect_limit'].includes(String(probe.status)) || !Array.isArray(probe.redirects)) throw new ApiError('The URL analysis response was invalid. Please retry.');
+    return body as unknown as URLCheck;
   },
   async health(signal?: AbortSignal): Promise<Health> {
     const body = await request('/health', { signal }, 15000);

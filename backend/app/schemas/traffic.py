@@ -32,15 +32,18 @@ class ValidationResponse(BaseModel):
     message: str
 
 
-class URLReputationRequest(BaseModel):
+class URLCheckRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
 
 
-class URLReputationResponse(BaseModel):
-    provider: Literal["Google Web Risk"]
-    matched: bool
-    threat_types: list[str] = Field(default_factory=list)
-    expires_at: str | None = None
+class URLCheckResponse(BaseModel):
+    url: str
+    host: str
+    model: dict
+    probe: dict
+    findings: list[str]
+    stages: list[dict]
+    limitations: list[str]
 
 
 class CapturedFlow(BaseModel):

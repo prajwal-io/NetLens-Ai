@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_publishable_key: str | None = None
     supabase_secret_key: str | None = None
-    webrisk_api_key: str | None = None
     storage_backend: Literal["sqlite", "supabase"] = "sqlite"
     max_upload_bytes: int = 5 * 1024 * 1024
     # Bound prediction payloads as well as server work; callers can submit several files.

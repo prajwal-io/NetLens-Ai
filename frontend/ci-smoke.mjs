@@ -31,7 +31,7 @@ try {
   const errors = [];
   let failSchemaRequest = false;
   let failHistoryRequest = false;
-  let failWebRiskRequest = false;
+  let failURLCheck = false;
   let failAuthRequest = false;
   let accessToken = '';
   page.on('pageerror', error => errors.push(error.message));
@@ -54,14 +54,14 @@ try {
     const path = new URL(route.request().url()).pathname;
     if (failSchemaRequest && path === '/api/v1/model/schema') return route.abort();
     if (failHistoryRequest && path === '/api/v1/analyses') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 503, message: 'History unavailable.' } }) });
-    if (failWebRiskRequest && path === '/api/v1/url/reputation') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 503, message: 'Google Web Risk rejected this project or API key. Check that Web Risk is enabled, billing is active, and the key is restricted to Web Risk API.' } }) });
+    if (failURLCheck && path === '/api/v1/url/check') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 503, message: 'The trained URL analysis model is unavailable.' } }) });
     const responses = {
       '/api/v1/health': { status: 200, body: { status: 'ok', service: 'netsight-api', model_loaded: false, model_version: null } },
       '/api/v1/analyses': { status: 200, body: { items: [], total: 0, limit: 10, offset: 0 } },
       '/api/v1/model/schema': { status: 200, body: { schema_name: 'unsw-nb15-flow-v1', feature_count: 1, features: ['dur'], numeric_features: ['dur'], categorical_features: [], excluded_columns: ['id', 'label', 'attack_cat'] } },
       '/api/v1/model/info': { status: 503, body: { error: { code: 503, message: 'No evaluated model is installed.' } } },
       '/api/v1/replays': { status: 200, body: { items: [] } },
-      '/api/v1/url/reputation': { status: 200, body: { provider: 'Google Web Risk', matched: true, threat_types: ['SOCIAL_ENGINEERING'], expires_at: '2026-11-20T12:00:00Z' } },
+      '/api/v1/url/check': { status: 200, body: { url: 'https://example.com/', host: 'example.com', model: { model_version: 'netsight-url-lr-phiusiil-v1', label: 'phishing_signal', phishing_score: 0.83, threshold: 0.5 }, probe: { status: 'reachable', http_status: 200, final_host: 'www.example.com', dns_address_count: 2, redirects: [{ status: 301, from_host: 'example.com', to_host: 'www.example.com', cross_host: true }] }, findings: ['URL model signal for testing.', 'The website redirected 1 time(s); review the recorded host changes.'], stages: [{ name: 'URL validation', duration_ms: 0.1, status: 'complete' }, { name: 'URL feature extraction and ML', duration_ms: 0.4, status: 'complete' }, { name: 'Public DNS and HTTP check', duration_ms: 44.2, status: 'complete' }, { name: 'Evidence summary', duration_ms: 0.1, status: 'complete' }], limitations: ['URL analysis is an investigation signal.', 'HTTP response does not prove safety.'] } },
       '/api/v1/traffic/pcap/analyze': { status: 200, body: { filename: 'demo.pcap', packets_seen: 5, supported_packets: 5, flow_count: 2, captured_bytes: 420, flows: [{ source: '192.0.2.10:51514', destination: '198.51.100.20:443', protocol: 'TCP', packets: 3, captured_bytes: 300, source_packets: 2, destination_packets: 1, source_bytes: 200, destination_bytes: 100, duration_seconds: 0.5, first_seen: '2026-11-20T12:00:00Z', last_seen: '2026-11-20T12:00:00Z' }], limitations: ['Packet-derived flows are not sent to the ML classifier.'] } },
     };
     const response = responses[path] ?? { status: 404, body: { error: { code: 404, message: 'Not found.' } } };
@@ -110,22 +110,17 @@ try {
     await page.locator('nav.desktop-navigation').getByRole('link', { name, exact: true }).click();
     await page.getByRole('heading', { name, exact: true, level: 1 }).waitFor();
     if (name === 'URL Check Demo') {
-      await page.getByRole('button', { name: 'Lookalike brand' }).click();
-      await page.getByRole('heading', { name: 'Warning signs found' }).waitFor();
-      assert.ok((await page.locator('.url-check-result').innerText()).includes('outside its common paypal.com domain'));
-      await page.getByLabel(/I understand the URL will be shared/).check();
-      failWebRiskRequest = true;
-      await page.getByRole('button', { name: 'Check Google Web Risk' }).click();
-      await page.getByRole('alert').filter({ hasText: 'billing is active' }).waitFor();
-      failWebRiskRequest = false;
-      await page.getByRole('button', { name: 'Check Google Web Risk' }).click();
-      await page.getByRole('status').filter({ hasText: 'Google Web Risk match: SOCIAL_ENGINEERING' }).waitFor();
-      await page.getByRole('button', { name: 'No common signals' }).click();
-      await page.getByRole('heading', { name: 'No common warning signs' }).waitFor();
-      await page.getByRole('button', { name: 'IPv6 address host' }).click();
-      assert.ok((await page.locator('.url-check-result').innerText()).includes('uses an IP address'));
-      await page.getByRole('button', { name: 'Lookalike character swap' }).click();
-      assert.ok((await page.locator('.url-check-result').innerText()).includes('1/l character swap'));
+      const checkRequest = page.waitForRequest(request => request.url().endsWith('/api/v1/url/check'));
+      await page.getByRole('button', { name: 'Public website' }).click();
+      assert.equal((await checkRequest).postDataJSON().url, 'https://example.com/');
+      await page.getByRole('heading', { name: 'Phishing patterns detected' }).waitFor();
+      assert.ok((await page.locator('.url-check-result').innerText()).includes('netsight-url-lr-phiusiil-v1'));
+      assert.ok((await page.locator('.url-check-result').innerText()).includes('HTTP 301'));
+      assert.equal(await page.locator('.url-check-stages li').count(), 4);
+      failURLCheck = true;
+      await page.getByRole('button', { name: 'Suspicious path example' }).click();
+      await page.getByRole('alert').filter({ hasText: 'The trained URL analysis model is unavailable.' }).waitFor();
+      failURLCheck = false;
     }
     if (name === 'Traffic Analyzer') {
       await page.locator('#capture-file').setInputFiles({ name: 'demo.pcap', mimeType: 'application/vnd.tcpdump.pcap', buffer: Buffer.from('mock capture') });
@@ -164,7 +159,7 @@ try {
   await page.goto(`${base}/reports`);
   await page.getByRole('heading', { name: 'Sign in to NetLens AI' }).waitFor();
   assert.deepEqual(errors, [], 'The app should render all seven workspace modules without browser errors.');
-  console.log('PASS: mocked Supabase sign-in/sign-out and network failure, protected routing, seven workspace modules, URL heuristics, and API states.');
+  console.log('PASS: mocked Supabase sign-in/sign-out and network failure, protected routing, seven workspace modules, backend URL ML/probe results, and API states.');
 } finally {
   await browser?.close();
   if (process.platform === 'win32' && server.pid) spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
