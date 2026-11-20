@@ -31,7 +31,7 @@ try {
   const errors = [];
   let failSchemaRequest = false;
   let failHistoryRequest = false;
-  let failWebRiskRequest = false;
+  let failOpenPhishRequest = false;
   let failAuthRequest = false;
   let accessToken = '';
   page.on('pageerror', error => errors.push(error.message));
@@ -54,14 +54,14 @@ try {
     const path = new URL(route.request().url()).pathname;
     if (failSchemaRequest && path === '/api/v1/model/schema') return route.abort();
     if (failHistoryRequest && path === '/api/v1/analyses') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 503, message: 'History unavailable.' } }) });
-    if (failWebRiskRequest && path === '/api/v1/url/reputation') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 503, message: 'Google Web Risk rejected this project or API key. Check that Web Risk is enabled, billing is active, and the key is restricted to Web Risk API.' } }) });
+    if (failOpenPhishRequest && path === '/api/v1/url/reputation') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 503, message: 'OpenPhish feed is unavailable right now. Local URL checks are still available.' } }) });
     const responses = {
       '/api/v1/health': { status: 200, body: { status: 'ok', service: 'netsight-api', model_loaded: false, model_version: null } },
       '/api/v1/analyses': { status: 200, body: { items: [], total: 0, limit: 10, offset: 0 } },
       '/api/v1/model/schema': { status: 200, body: { schema_name: 'unsw-nb15-flow-v1', feature_count: 1, features: ['dur'], numeric_features: ['dur'], categorical_features: [], excluded_columns: ['id', 'label', 'attack_cat'] } },
       '/api/v1/model/info': { status: 503, body: { error: { code: 503, message: 'No evaluated model is installed.' } } },
       '/api/v1/replays': { status: 200, body: { items: [] } },
-      '/api/v1/url/reputation': { status: 200, body: { provider: 'Google Web Risk', matched: true, threat_types: ['SOCIAL_ENGINEERING'], expires_at: '2026-11-20T12:00:00Z' } },
+      '/api/v1/url/reputation': { status: 200, body: { provider: 'OpenPhish Community Feed', matched: true, threat_types: ['PHISHING'], updated_at: '2026-11-20T12:00:00Z', stale: false } },
       '/api/v1/traffic/pcap/analyze': { status: 200, body: { filename: 'demo.pcap', packets_seen: 5, supported_packets: 5, flow_count: 2, captured_bytes: 420, flows: [{ source: '192.0.2.10:51514', destination: '198.51.100.20:443', protocol: 'TCP', packets: 3, captured_bytes: 300, source_packets: 2, destination_packets: 1, source_bytes: 200, destination_bytes: 100, duration_seconds: 0.5, first_seen: '2026-11-20T12:00:00Z', last_seen: '2026-11-20T12:00:00Z' }], limitations: ['Packet-derived flows are not sent to the ML classifier.'] } },
     };
     const response = responses[path] ?? { status: 404, body: { error: { code: 404, message: 'Not found.' } } };
@@ -113,13 +113,13 @@ try {
       await page.getByRole('button', { name: 'Lookalike brand' }).click();
       await page.getByRole('heading', { name: 'Warning signs found' }).waitFor();
       assert.ok((await page.locator('.url-check-result').innerText()).includes('outside its common paypal.com domain'));
-      await page.getByLabel(/I understand the URL will be shared/).check();
-      failWebRiskRequest = true;
-      await page.getByRole('button', { name: 'Check Google Web Risk' }).click();
-      await page.getByRole('alert').filter({ hasText: 'billing is active' }).waitFor();
-      failWebRiskRequest = false;
-      await page.getByRole('button', { name: 'Check Google Web Risk' }).click();
-      await page.getByRole('status').filter({ hasText: 'Google Web Risk match: SOCIAL_ENGINEERING' }).waitFor();
+      assert.ok((await page.locator('.url-reputation').innerText()).includes('Your URL is not sent to OpenPhish'));
+      failOpenPhishRequest = true;
+      await page.getByRole('button', { name: 'Check OpenPhish feed' }).click();
+      await page.getByRole('alert').filter({ hasText: 'Local URL checks are still available' }).waitFor();
+      failOpenPhishRequest = false;
+      await page.getByRole('button', { name: 'Check OpenPhish feed' }).click();
+      await page.getByRole('status').filter({ hasText: 'OpenPhish lists this URL as PHISHING' }).waitFor();
       await page.getByRole('button', { name: 'No common signals' }).click();
       await page.getByRole('heading', { name: 'No common warning signs' }).waitFor();
       await page.getByRole('button', { name: 'IPv6 address host' }).click();

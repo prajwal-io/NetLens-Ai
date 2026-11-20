@@ -37,10 +37,11 @@ class URLReputationRequest(BaseModel):
 
 
 class URLReputationResponse(BaseModel):
-    provider: Literal["Google Web Risk"]
+    provider: Literal["OpenPhish Community Feed"]
     matched: bool
     threat_types: list[str] = Field(default_factory=list)
-    expires_at: str | None = None
+    updated_at: datetime
+    stale: bool = False
 
 
 class CapturedFlow(BaseModel):

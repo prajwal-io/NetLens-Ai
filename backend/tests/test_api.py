@@ -587,72 +587,60 @@ def test_pcap_upload_rejects_invalid_files_and_packet_overflow(client, tmp_path,
     assert overflow.status_code == 413
 
 
-def test_web_risk_is_optional_validated_and_provider_results_are_mapped(client, monkeypatch):
+def test_openphish_feed_matches_normalized_urls_and_caches_results(client, monkeypatch):
     from app.services import reputation
+    from app.services.openphish import OpenPhishFeed
 
-    monkeypatch.setattr(settings, "webrisk_api_key", None)
-    assert client.post("/api/v1/url/reputation", json={"url": "https://example.com/"}).status_code == 503
-    monkeypatch.setattr(settings, "webrisk_api_key", "test-key")
+    feed = OpenPhishFeed()
+    calls = 0
+
+    async def download():
+        nonlocal calls
+        calls += 1
+        return frozenset({"https://phish.example/login?campaign=1"})
+
+    monkeypatch.setattr(feed, "_download", download)
+    monkeypatch.setattr(reputation, "openphish_feed", feed)
     assert client.post("/api/v1/url/reputation", json={"url": "file:///etc/passwd"}).status_code == 422
-    requested = {}
-
-    class Response:
-        status_code = 200
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"threat": {"threatTypes": ["SOCIAL_ENGINEERING"], "expireTime": "2026-11-20T12:00:00Z"}}
-
-    class Client:
-        def __init__(self, **kwargs):
-            assert kwargs["follow_redirects"] is False
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def get(self, url, *, params):
-            requested.update(url=url, params=params)
-            return Response()
-
-    monkeypatch.setattr(reputation.httpx, "AsyncClient", Client)
-    response = client.post("/api/v1/url/reputation", json={"url": "https://example.com/login"})
+    response = client.post("/api/v1/url/reputation", json={"url": "HTTPS://PHISH.EXAMPLE/login?campaign=1#form"})
     assert response.status_code == 200
-    assert response.json() == {"provider": "Google Web Risk", "matched": True, "threat_types": ["SOCIAL_ENGINEERING"], "expires_at": "2026-11-20T12:00:00Z"}
-    assert requested["url"] == "https://webrisk.googleapis.com/v1/uris:search"
-    assert ("uri", "https://example.com/login") in requested["params"]
+    body = response.json()
+    assert body["provider"] == "OpenPhish Community Feed"
+    assert body["matched"] is True
+    assert body["threat_types"] == ["PHISHING"]
+    assert body["stale"] is False
+    assert body["updated_at"]
+    assert calls == 1
+
+    miss = client.post("/api/v1/url/reputation", json={"url": "https://phish.example/other"})
+    assert miss.status_code == 200
+    assert miss.json()["matched"] is False
+    assert calls == 1
 
 
-def test_web_risk_403_reports_project_setup_requirements(client, monkeypatch):
+def test_openphish_feed_uses_stale_cache_and_fails_closed_without_one(client, monkeypatch):
+    from datetime import datetime, timedelta, timezone
     from app.services import reputation
+    from app.services.openphish import OpenPhishFeed
 
-    monkeypatch.setattr(settings, "webrisk_api_key", "test-key")
+    feed = OpenPhishFeed()
 
-    class Response:
-        status_code = 403
+    async def fail_download():
+        raise httpx.ConnectError("offline")
 
-    class Client:
-        def __init__(self, **kwargs):
-            pass
+    monkeypatch.setattr(feed, "_download", fail_download)
+    monkeypatch.setattr(reputation, "openphish_feed", feed)
+    unavailable = client.post("/api/v1/url/reputation", json={"url": "https://phish.example/login"})
+    assert unavailable.status_code == 503
+    assert "Local URL checks are still available" in unavailable.json()["error"]["message"]
 
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def get(self, *args, **kwargs):
-            return Response()
-
-    monkeypatch.setattr(reputation.httpx, "AsyncClient", Client)
-    response = client.post("/api/v1/url/reputation", json={"url": "https://example.com/"})
-    assert response.status_code == 503
-    assert "billing is active" in response.json()["error"]["message"]
-    assert "test-key" not in response.text
+    feed._urls = frozenset({"https://phish.example/login"})
+    feed._fetched_at = datetime.now(timezone.utc) - timedelta(hours=13)
+    feed._expires_at = 0
+    stale = client.post("/api/v1/url/reputation", json={"url": "https://phish.example/login"})
+    assert stale.status_code == 200
+    assert stale.json()["matched"] is True
+    assert stale.json()["stale"] is True
 
 
 @pytest.mark.parametrize('delimiter', [',', ';', '\t', '|'])

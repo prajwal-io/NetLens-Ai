@@ -188,7 +188,7 @@ export interface AnalysisSummary {
 }
 export interface ResponseDecision { analysis_id: string; row_id: number; decision: 'simulated_block' | 'dismissed'; decided_at: string }
 export interface ReplayScenario { id: string; title: string; description: string; rows: number; dataset: string; timing: string }
-export interface UrlReputation { provider: string; matched: boolean; threat_types: string[]; expires_at: string | null }
+export interface UrlReputation { provider: 'OpenPhish Community Feed'; matched: boolean; threat_types: string[]; updated_at: string; stale: boolean }
 export interface CapturedFlow {
   source: string; destination: string; protocol: 'TCP' | 'UDP'; packets: number; captured_bytes: number;
   source_packets: number; destination_packets: number; source_bytes: number; destination_bytes: number;
@@ -290,7 +290,7 @@ export const api = {
   },
   async checkUrlReputation(url: string): Promise<UrlReputation> {
     const body = await request('/url/reputation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
-    if (!isRecord(body) || body.provider !== 'Google Web Risk' || typeof body.matched !== 'boolean' || !Array.isArray(body.threat_types) || !body.threat_types.every(item => typeof item === 'string') || (body.expires_at !== null && typeof body.expires_at !== 'string')) throw new ApiError('The reputation response was incomplete. Please retry.');
+    if (!isRecord(body) || body.provider !== 'OpenPhish Community Feed' || typeof body.matched !== 'boolean' || !Array.isArray(body.threat_types) || !body.threat_types.every(item => typeof item === 'string') || typeof body.updated_at !== 'string' || typeof body.stale !== 'boolean') throw new ApiError('The reputation response was incomplete. Please retry.');
     return body as unknown as UrlReputation;
   },
   async health(signal?: AbortSignal): Promise<Health> {

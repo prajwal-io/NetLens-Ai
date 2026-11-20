@@ -7,7 +7,7 @@ from app.main import app
 from app.core.config import settings
 from app.services.model_service import model_service
 from ml.dataset import DATASET_ROOT, OFFICIAL_SPLIT_EXPECTATIONS, verify_split_file
-from ml.schema import FEATURE_COLUMNS, TEST_FILENAME
+from ml.schema import FEATURE_COLUMNS, TEST_FILENAME, TRAINING_FILENAME
 
 
 def test_real_heldout_csv_uses_installed_model(tmp_path, monkeypatch):
@@ -31,3 +31,31 @@ def test_real_heldout_csv_uses_installed_model(tmp_path, monkeypatch):
         assert result['counts'] == {'normal': int((labels == 0).sum()), 'malicious': int((labels == 1).sum())}
         np.testing.assert_allclose([row['malicious_score'] for row in result['predictions']], scores)
         assert [row['label'] for row in result['predictions']] == ['malicious' if label else 'normal' for label in labels]
+
+
+def test_distinct_training_and_heldout_csvs_use_the_real_api(tmp_path, monkeypatch):
+    sources = (('training', TRAINING_FILENAME), ('test', TEST_FILENAME))
+    if any(not (DATASET_ROOT / filename).is_file() for _, filename in sources) or not model_service.artifact_path.is_file():
+        pytest.skip('Real dataset and evaluated local artifact required.')
+    monkeypatch.setattr(settings, 'database_path', tmp_path / 'two-split-upload.db')
+    analysis_ids = set()
+    with TestClient(app) as client:
+        assert client.get('/api/v1/health').json()['model_loaded']
+        for index, (split, filename) in enumerate(sources):
+            source = DATASET_ROOT / filename
+            verify_split_file(source, split, OFFICIAL_SPLIT_EXPECTATIONS[filename])
+            frame = pd.read_csv(source).sample(n=500, random_state=2026 + index)
+            content = frame.to_csv(index=False).encode('utf-8-sig')
+            validated = client.post('/api/v1/traffic/validate', files={'file': (f'{split}-sample.csv', content, 'text/csv')})
+            assert validated.status_code == 200 and validated.json()['row_count'] == 500
+            response = client.post('/api/v1/traffic/analyze', files={'file': (f'{split}-sample.csv', content, 'text/csv')})
+            assert response.status_code == 200
+            result = response.json()
+            labels, scores, metadata, _ = model_service.predict(frame.loc[:, FEATURE_COLUMNS])
+            assert result['analysis_id'] not in analysis_ids
+            analysis_ids.add(result['analysis_id'])
+            assert result['model_version'] == metadata['model_version']
+            assert result['total_flows'] == 500
+            assert result['counts'] == {'normal': int((labels == 0).sum()), 'malicious': int((labels == 1).sum())}
+            np.testing.assert_allclose([row['malicious_score'] for row in result['predictions']], scores)
+            assert [row['label'] for row in result['predictions']] == ['malicious' if label else 'normal' for label in labels]
