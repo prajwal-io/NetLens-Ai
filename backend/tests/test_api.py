@@ -150,7 +150,7 @@ def test_analysis_endpoints_require_a_bearer_session(client):
             assert response.headers["www-authenticate"] == "Bearer"
         for method, path in (
             ("post", "/api/v1/traffic/validate"), ("post", "/api/v1/traffic/analyze"),
-            ("post", "/api/v1/traffic/pcap/analyze"), ("post", "/api/v1/url/reputation"),
+            ("post", "/api/v1/traffic/pcap/analyze"), ("post", "/api/v1/url/check"),
             ("post", "/api/v1/replays/demo/analyze"), ("put", "/api/v1/analyses/private/flows/1/response"),
             ("delete", "/api/v1/analyses/private"), ("delete", "/api/v1/analyses/private/flows/1/response"),
         ):
@@ -410,6 +410,32 @@ def test_upload_body_limit_rejects_invalid_or_oversized_content_length_without_r
         assert sent[0]["status"] == expected
 
 
+def test_url_check_requires_authenticated_supabase_session(client):
+    override = app.dependency_overrides.pop(require_user)
+    try:
+        response = client.post("/api/v1/url/check", json={"url": "https://example.com/"})
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+    finally:
+        app.dependency_overrides[require_user] = override
+
+
+def test_url_check_endpoint_returns_backend_model_probe_and_stages(client, monkeypatch):
+    from app.services import url_check
+
+    expected = {
+        "url": "https://example.com/", "host": "example.com",
+        "model": {"model_version": "test-url-model", "label": "no_strong_signal", "phishing_score": 0.1, "threshold": 0.5},
+        "probe": {"status": "reachable", "http_status": 200, "final_host": "example.com", "dns_address_count": 1, "redirects": []},
+        "findings": ["test evidence"], "stages": [{"name": "Evidence summary", "duration_ms": 0.1, "status": "complete"}],
+        "limitations": ["test limitation"],
+    }
+    monkeypatch.setattr(url_check, "check_url", lambda value: expected if value == expected["url"] else None)
+    response = client.post("/api/v1/url/check", json={"url": expected["url"]})
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
 def test_json_api_body_limit_applies_without_content_length():
     import asyncio
     from app.main import UploadBodyLimitMiddleware
@@ -429,7 +455,7 @@ def test_json_api_body_limit_applies_without_content_length():
     async def downstream(scope, receive, send):
         raise AssertionError("Oversized JSON reached FastAPI parsing")
 
-    scope = {"type": "http", "method": "POST", "path": "/api/v1/url/reputation", "headers": []}
+    scope = {"type": "http", "method": "POST", "path": "/api/v1/url/check", "headers": []}
     asyncio.run(UploadBodyLimitMiddleware(downstream, limit=1024, api_limit=5)(scope, receive, send))
     assert sent[0]["status"] == 413
 
@@ -585,62 +611,6 @@ def test_pcap_upload_rejects_invalid_files_and_packet_overflow(client, tmp_path,
     monkeypatch.setattr(settings, "max_capture_packets", 2)
     overflow = client.post("/api/v1/traffic/pcap/analyze", files={"file": ("many.pcap", _capture_file(tmp_path / "many.pcap"), "application/octet-stream")})
     assert overflow.status_code == 413
-
-
-def test_openphish_feed_matches_normalized_urls_and_caches_results(client, monkeypatch):
-    from app.services import reputation
-    from app.services.openphish import OpenPhishFeed
-
-    feed = OpenPhishFeed()
-    calls = 0
-
-    async def download():
-        nonlocal calls
-        calls += 1
-        return frozenset({"https://phish.example/login?campaign=1"})
-
-    monkeypatch.setattr(feed, "_download", download)
-    monkeypatch.setattr(reputation, "openphish_feed", feed)
-    assert client.post("/api/v1/url/reputation", json={"url": "file:///etc/passwd"}).status_code == 422
-    response = client.post("/api/v1/url/reputation", json={"url": "HTTPS://PHISH.EXAMPLE/login?campaign=1#form"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["provider"] == "OpenPhish Community Feed"
-    assert body["matched"] is True
-    assert body["threat_types"] == ["PHISHING"]
-    assert body["stale"] is False
-    assert body["updated_at"]
-    assert calls == 1
-
-    miss = client.post("/api/v1/url/reputation", json={"url": "https://phish.example/other"})
-    assert miss.status_code == 200
-    assert miss.json()["matched"] is False
-    assert calls == 1
-
-
-def test_openphish_feed_uses_stale_cache_and_fails_closed_without_one(client, monkeypatch):
-    from datetime import datetime, timedelta, timezone
-    from app.services import reputation
-    from app.services.openphish import OpenPhishFeed
-
-    feed = OpenPhishFeed()
-
-    async def fail_download():
-        raise httpx.ConnectError("offline")
-
-    monkeypatch.setattr(feed, "_download", fail_download)
-    monkeypatch.setattr(reputation, "openphish_feed", feed)
-    unavailable = client.post("/api/v1/url/reputation", json={"url": "https://phish.example/login"})
-    assert unavailable.status_code == 503
-    assert "Local URL checks are still available" in unavailable.json()["error"]["message"]
-
-    feed._urls = frozenset({"https://phish.example/login"})
-    feed._fetched_at = datetime.now(timezone.utc) - timedelta(hours=13)
-    feed._expires_at = 0
-    stale = client.post("/api/v1/url/reputation", json={"url": "https://phish.example/login"})
-    assert stale.status_code == 200
-    assert stale.json()["matched"] is True
-    assert stale.json()["stale"] is True
 
 
 @pytest.mark.parametrize('delimiter', [',', ';', '\t', '|'])

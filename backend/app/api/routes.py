@@ -4,7 +4,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import Principal, require_user
 from app.core.config import settings
-from app.schemas.traffic import AnalysisResponse, AnalysisHistory, PredictionPreview, FeatureSchemaResponse, HealthResponse, ValidationResponse, ResponseDecisionList, ResponseDecisionRequest, ResponseDecision, CaptureAnalysisResponse, URLReputationRequest, URLReputationResponse
+from app.schemas.traffic import AnalysisResponse, AnalysisHistory, PredictionPreview, FeatureSchemaResponse, HealthResponse, ValidationResponse, ResponseDecisionList, ResponseDecisionRequest, ResponseDecision, CaptureAnalysisResponse, URLCheckRequest, URLCheckResponse
 from app.services.model_service import model_service
 from app.services.validation import validate_csv
 from app.services import history
@@ -102,10 +102,10 @@ async def analyze_capture_upload(file: UploadFile = File(...), principal: Princi
         await file.close()
 
 
-@router.post("/url/reputation", response_model=URLReputationResponse)
-async def url_reputation(request: URLReputationRequest, principal: Principal = Depends(require_user)):
-    from app.services.reputation import lookup_url
-    return await lookup_url(request.url)
+@router.post("/url/check", response_model=URLCheckResponse)
+def url_check(request: URLCheckRequest, principal: Principal = Depends(require_user)):
+    from app.services.url_check import check_url
+    return check_url(request.url)
 
 
 @router.get("/analyses", response_model=AnalysisHistory)

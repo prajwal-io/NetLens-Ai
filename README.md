@@ -449,7 +449,9 @@ It cannot automatically claim to:
 
 These capabilities require additional implementations and evaluations.
 
-The separate **URL Check Demo** (`/url-check`) shows local heuristic signals such as HTTP, punycode, IP-address hosts, long URLs, and brand-like names on unrelated domains. It does not visit the URL, check threat reputation, or guarantee that a site is safe; it is not part of the evaluated network-flow model.
+The separate **URL Check Demo** (`/url-check`) sends authenticated requests through FastAPI to a URL-only logistic-regression model trained from 22 features recomputed from the raw URL column in the [UCI PhiUSIIL dataset](https://archive.ics.uci.edu/dataset/967/phiusil+phishing+url+dataset). Domain-grouped holdout test results in the shipped model artifact: 96.83% accuracy, 99.14% phishing recall, and 4.99% false-positive rate. After inference, the backend resolves public DNS and makes a bounded HTTP `HEAD` check, reports redirects, and blocks private/reserved addresses. This is a separate model from the UNSW-NB15 flow classifier; URL scores and reachability are investigation evidence, not a confirmed verdict or proof of safety. It does not query an external reputation service.
+
+See [URL model training, metrics, and limitations](docs/url-model.md).
 
 ---
 
