@@ -97,7 +97,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function decode(text: string, status: number): unknown {
   let body: unknown;
   try { body = JSON.parse(text) as unknown; }
-  catch { throw new ApiError(status >= 400 ? 'Cannot reach NetSight API. Check that the backend is running on port 8000.' : 'The API returned an unreadable response. Please retry.', status); }
+    catch { throw new ApiError(status >= 400 ? 'Cannot reach NetSight API. Check the backend connection and retry.' : 'The API returned an unreadable response. Please retry.', status); }
   if (status < 200 || status >= 300) {
     const error = isRecord(body) && isRecord(body.error) ? body.error.message : undefined;
     throw new ApiError(typeof error === 'string' ? error : 'The request could not be completed.', status);
@@ -124,21 +124,25 @@ function analysisResponse(body: unknown): Analysis {
 }
 
 function upload<T>(path: string, file: File, validate: (body: unknown) => T, options: { signal?: AbortSignal; onProgress?: (percent: number) => void } = {}): Promise<T> {
-  return new Promise((resolve, reject) => {
+  return getAccessToken().then(token => {
+    if (!token) throw new ApiError('Sign in to validate or analyze traffic.', 401);
+    return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const abort = () => xhr.abort();
     const clean = () => options.signal?.removeEventListener('abort', abort);
     xhr.open('POST', base + path);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.timeout = 90000;
     xhr.upload.onprogress = (event) => { if (event.lengthComputable) options.onProgress?.(Math.min(100, Math.round(event.loaded / event.total * 100))); };
     xhr.upload.onload = () => options.onProgress?.(100);
     xhr.onload = () => { clean(); try { resolve(validate(decode(xhr.responseText, xhr.status))); } catch (error) { reject(error); } };
-    xhr.onerror = () => { clean(); reject(new ApiError('Cannot reach NetSight API. Check that the backend is running on port 8000.')); };
-    xhr.ontimeout = () => { clean(); reject(new ApiError('CSV processing timed out. Please retry.')); };
+    xhr.onerror = () => { clean(); reject(new ApiError('Cannot reach NetSight API. Check the backend connection and retry.')); };
+    xhr.ontimeout = () => { clean(); reject(new ApiError('File processing timed out. Please retry.')); };
     xhr.onabort = () => { clean(); reject(new DOMException('Request cancelled.', 'AbortError')); };
     if (options.signal?.aborted) { reject(new DOMException('Request cancelled.', 'AbortError')); return; }
     options.signal?.addEventListener('abort', abort, { once: true });
     const data = new FormData(); data.append('file', file); xhr.send(data);
+    });
   });
 }
 
@@ -169,6 +173,14 @@ function isPredictionPreview(value: unknown): value is PredictionPreview {
     && ['source', 'destination', 'timestamp'].every((key) => value[key] === undefined || value[key] === null || typeof value[key] === 'string');
 }
 
+function captureResponse(value: unknown): CaptureAnalysis {
+  if (!isRecord(value) || typeof value.filename !== 'string' || !Number.isInteger(value.packets_seen) || !Number.isInteger(value.supported_packets) || !Number.isInteger(value.flow_count) || !Number.isInteger(value.captured_bytes) || !Array.isArray(value.flows) || !Array.isArray(value.limitations)
+    || !value.flows.every(flow => isRecord(flow) && typeof flow.source === 'string' && typeof flow.destination === 'string' && (flow.protocol === 'TCP' || flow.protocol === 'UDP') && ['packets', 'captured_bytes', 'source_packets', 'destination_packets', 'source_bytes', 'destination_bytes'].every(key => Number.isInteger(flow[key])) && Number.isFinite(flow.duration_seconds) && typeof flow.first_seen === 'string' && typeof flow.last_seen === 'string')) {
+    throw new ApiError('The packet capture response was incomplete. Please retry.');
+  }
+  return value as unknown as CaptureAnalysis;
+}
+
 
 export interface AnalysisSummary {
   analysis_id: string; filename: string; created_at: string; source_type: Analysis['source_type'];
@@ -176,11 +188,21 @@ export interface AnalysisSummary {
 }
 export interface ResponseDecision { analysis_id: string; row_id: number; decision: 'simulated_block' | 'dismissed'; decided_at: string }
 export interface ReplayScenario { id: string; title: string; description: string; rows: number; dataset: string; timing: string }
+export interface UrlReputation { provider: string; matched: boolean; threat_types: string[]; expires_at: string | null }
+export interface CapturedFlow {
+  source: string; destination: string; protocol: 'TCP' | 'UDP'; packets: number; captured_bytes: number;
+  source_packets: number; destination_packets: number; source_bytes: number; destination_bytes: number;
+  duration_seconds: number; first_seen: string; last_seen: string;
+}
+export interface CaptureAnalysis { filename: string; packets_seen: number; supported_packets: number; flow_count: number; captured_bytes: number; flows: CapturedFlow[]; limitations: string[] }
 export interface HistoryPage { items: AnalysisSummary[]; total: number; limit: number; offset: number }
 
 async function request(path: string, options: RequestInit = {}, timeoutMs = 90000): Promise<unknown> {
   try {
-    const response = await fetch(base + path, { ...options, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
+    const headers = new Headers(options.headers);
+    const token = await getAccessToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const response = await fetch(base + path, { ...options, headers, signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
     if (response.status === 204) return null;
     return decode(await response.text(), response.status);
   } catch (error) {
@@ -192,7 +214,9 @@ async function request(path: string, options: RequestInit = {}, timeoutMs = 9000
 
 export async function downloadReport(id: string, format: 'csv' | 'pdf') {
   try {
-    const response = await fetch(`${base}/analyses/${encodeURIComponent(id)}/${format === 'csv' ? 'export.csv' : 'report.pdf'}`, { signal: AbortSignal.timeout(90000) });
+    const token = await getAccessToken();
+    if (!token) throw new ApiError('Sign in to download analysis reports.', 401);
+    const response = await fetch(`${base}/analyses/${encodeURIComponent(id)}/${format === 'csv' ? 'export.csv' : 'report.pdf'}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(90000) });
     if (!response.ok) { decode(await response.text(), response.status); return; }
     const url = URL.createObjectURL(await response.blob());
     const link = document.createElement('a'); link.href = url; link.download = `netsight-${id}.${format}`;
@@ -228,6 +252,22 @@ export const api = {
   async replay(id: string, signal?: AbortSignal): Promise<Analysis> {
     return analysisResponse(await request(`/replays/${encodeURIComponent(id)}/analyze`, { method: 'POST', signal }));
   },
+  async downloadReplay(id: string): Promise<void> {
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new ApiError('Sign in to download benchmark samples.', 401);
+      const response = await fetch(`${base}/replays/${encodeURIComponent(id)}/download`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) });
+      if (!response.ok) { decode(await response.text(), response.status); return; }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a'); link.href = url; link.download = `netsight-${id}.csv`;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      if (error instanceof TypeError) throw new ApiError('Cannot reach NetSight API. Check the backend connection and retry.');
+      if (error instanceof DOMException && error.name === 'TimeoutError') throw new ApiError('The benchmark download timed out. Please retry.');
+      throw error;
+    }
+  },
   async flow(id: string, row: number, signal?: AbortSignal): Promise<PredictionPreview> {
     const body = await request(`/analyses/${encodeURIComponent(id)}/flows/${row}`, { signal });
     if (!isPredictionPreview(body)) throw new ApiError('The flow details were incomplete. Please retry.');
@@ -247,6 +287,11 @@ export const api = {
   },
   async clearResponseDecision(id: string, row: number): Promise<void> {
     await request(`/analyses/${encodeURIComponent(id)}/flows/${row}/response`, { method: 'DELETE' });
+  },
+  async checkUrlReputation(url: string): Promise<UrlReputation> {
+    const body = await request('/url/reputation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+    if (!isRecord(body) || body.provider !== 'Google Web Risk' || typeof body.matched !== 'boolean' || !Array.isArray(body.threat_types) || !body.threat_types.every(item => typeof item === 'string') || (body.expires_at !== null && typeof body.expires_at !== 'string')) throw new ApiError('The reputation response was incomplete. Please retry.');
+    return body as unknown as UrlReputation;
   },
   async health(signal?: AbortSignal): Promise<Health> {
     const body = await request('/health', { signal }, 15000);
@@ -271,4 +316,8 @@ export const api = {
   analyze(file: File, options: { signal?: AbortSignal; onProgress?: (percent: number) => void } = {}): Promise<Analysis> {
     return upload('/traffic/analyze', file, analysisResponse, options);
   },
+  analyzeCapture(file: File): Promise<CaptureAnalysis> {
+    return upload('/traffic/pcap/analyze', file, captureResponse);
+  },
 };
+import { getAccessToken } from '../auth/AuthContext';

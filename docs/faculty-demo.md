@@ -1,6 +1,6 @@
 # Offline faculty demonstration
 
-This runbook keeps the demo on one Windows laptop and does not require internet after preparation. The application uses the saved Random Forest v4 model and bundled historical UNSW-NB15 excerpts.
+This runbook keeps the demo on one Windows laptop. Use the local Supabase Auth stack for sign-in and SQLite for user-owned history. Prepare the containers and evaluated Random Forest v4 model before the presentation; see [authentication setup](auth-and-deployment.md).
 
 ## Prepare once, while online
 
@@ -22,16 +22,22 @@ cd ..\backend
 python -m ml.download_dataset
 python -m ml.train
 python -m ml.evaluate
-python scripts/check_setup.py
+python -m scripts.check_setup
 ```
 
 Dataset preparation and dependency installation need an internet connection. Keep the generated model at `backend/ml/artifacts/netsight-model.joblib`, the environment folders, and the bundled replay files on the demo laptop. Do not clean these between setup and the presentation.
 
 ## Start offline
 
-Open two PowerShell terminals from the project root.
+Start the local Supabase containers first. The stack, migrations, demo account, and environment files must already be prepared as described in [authentication setup](auth-and-deployment.md). Keep three PowerShell terminals open from the project root.
 
 Terminal 1:
+
+```powershell
+supabase start
+```
+
+Terminal 2:
 
 ```powershell
 cd backend
@@ -39,20 +45,20 @@ cd backend
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Terminal 2:
+Terminal 3:
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Confirm the backend and model status are connected. Optional preflight from a third terminal:
+Open `http://127.0.0.1:5173` and sign in with the prepared local demo account. Confirm the backend and model status are connected. Optional preflight from a fourth terminal:
 
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1
-python scripts/check_setup.py
-python scripts/check_release.py
+python -m scripts.check_setup
+python -m scripts.check_release
 ```
 
 SQLite history is stored locally under `backend/data/netsight.db`; do not copy this database into the repository. Analyses created during the demo remain available after a refresh.

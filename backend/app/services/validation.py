@@ -6,6 +6,8 @@ import csv
 import io
 import math
 
+import numpy as np
+
 from fastapi import HTTPException
 
 from app.core.config import settings
@@ -14,6 +16,7 @@ from ml.schema import CATEGORICAL_FEATURES, FEATURE_COLUMNS, NUMERIC_FEATURES, S
 
 
 REQUIRED_COLUMNS = FEATURE_COLUMNS
+MODEL_NUMERIC_MAX = float(np.finfo(np.float32).max)
 
 
 def parse_traffic_csv(content: bytes, filename: str) -> tuple[ValidationResponse, list[dict[str, float | str | None]]]:
@@ -72,6 +75,8 @@ def parse_traffic_csv(content: bytes, filename: str) -> tuple[ValidationResponse
                     reject(f"Row {line}: {feature} must be numeric or blank.")
                 if not math.isfinite(number):
                     reject(f"Row {line}: {feature} must be finite.")
+                if abs(number) > MODEL_NUMERIC_MAX:
+                    reject(f"Row {line}: {feature} exceeds the model's numeric range.")
                 feature_row[feature] = number
             for feature in CATEGORICAL_FEATURES:
                 raw = source_row[feature]

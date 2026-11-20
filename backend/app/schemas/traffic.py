@@ -32,6 +32,42 @@ class ValidationResponse(BaseModel):
     message: str
 
 
+class URLReputationRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
+
+
+class URLReputationResponse(BaseModel):
+    provider: Literal["Google Web Risk"]
+    matched: bool
+    threat_types: list[str] = Field(default_factory=list)
+    expires_at: str | None = None
+
+
+class CapturedFlow(BaseModel):
+    source: str
+    destination: str
+    protocol: Literal["TCP", "UDP"]
+    packets: int
+    captured_bytes: int
+    source_packets: int
+    destination_packets: int
+    source_bytes: int
+    destination_bytes: int
+    duration_seconds: float
+    first_seen: str
+    last_seen: str
+
+
+class CaptureAnalysisResponse(BaseModel):
+    filename: str
+    packets_seen: int
+    supported_packets: int
+    flow_count: int
+    captured_bytes: int
+    flows: list[CapturedFlow]
+    limitations: list[str]
+
+
 class Prediction(BaseModel):
     row_id: int
     label: Literal["normal", "malicious"]

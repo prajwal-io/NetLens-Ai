@@ -5,13 +5,23 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 const base = process.env.NETSIGHT_TEST_URL || 'http://127.0.0.1:5176';
 const executablePath = process.env.CHROME_PATH || (existsSync('C:/Program Files/Google/Chrome/Application/chrome.exe') ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : undefined);
+const testEmail = process.env.NETSIGHT_TEST_EMAIL;
+const testPassword = process.env.NETSIGHT_TEST_PASSWORD;
+if (!testEmail || !testPassword) throw new Error('Set NETSIGHT_TEST_EMAIL and NETSIGHT_TEST_PASSWORD to a dedicated local Supabase test account before running the release suite.');
+const supabaseHost = process.env.NETSIGHT_TEST_SUPABASE_URL ? new URL(process.env.NETSIGHT_TEST_SUPABASE_URL).hostname : '127.0.0.1';
 const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
 const page = await context.newPage();
 const errors = [], checks = [], scans = [], created = [], external = [];
-await page.route('**/*', route => { const url = new URL(route.request().url()); if (url.protocol.startsWith('http') && !['127.0.0.1', 'localhost'].includes(url.hostname)) { external.push(url.href); return route.abort(); } return route.continue(); });
+await page.route('**/*', route => { const url = new URL(route.request().url()); if (url.protocol.startsWith('http') && !['127.0.0.1', 'localhost', supabaseHost].includes(url.hostname)) { external.push(url.href); return route.abort(); } return route.continue(); });
 page.on('pageerror', error => errors.push(error.message));
 try {
+  await page.goto(`${base}/auth/login`);
+  await page.getByLabel('Email address').fill(testEmail);
+  await page.getByRole('button', { name: 'Use password instead' }).click();
+  await page.getByLabel('Password').fill(testPassword);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('heading', { name: 'Command Center', exact: true }).waitFor();
   const source = await readFile('../backend/data/replays/normal-benchmark.csv', 'utf8');
   // Real benchmark features + documentation-only IPs/times to test optional topology.
   // These extra context fields are test fixtures, not captured network metadata.
@@ -116,7 +126,14 @@ try {
   assert.ok(readiness.includes(`${(modelInfo.decision_threshold * 100).toFixed(1)}% score`));
   assert.ok((await page.locator('.dashboard-chart-panel').first().innerText()).includes(`≤ ${(modelInfo.threshold_policy.maximum_validation_false_positive_rate * 100).toFixed(1)}% false-positive rate`));
   checks.push('Command Center reflects live model metadata and persisted analyst response decisions');
-  for (const route of ['', 'command-center', 'network-pulse', 'traffic-analyzer', 'threat-investigation', 'model-lab', 'reports']) {
+  await page.goto(`${base}/url-check`);
+  await page.getByRole('button', { name: 'Lookalike brand' }).click();
+  await page.getByRole('heading', { name: 'Warning signs found' }).waitFor();
+  assert.ok((await page.locator('.url-check-result').innerText()).includes('outside its common paypal.com domain'));
+  await page.getByRole('button', { name: 'No common signals' }).click();
+  await page.getByRole('heading', { name: 'No common warning signs' }).waitFor();
+  checks.push('Local URL heuristic demo: lookalike-domain warning and clean example');
+  for (const route of ['', 'command-center', 'network-pulse', 'traffic-analyzer', 'url-check', 'threat-investigation', 'model-lab', 'reports']) {
     await page.goto(`${base}/${route}`);
     await page.locator('main h1').waitFor();
     await page.waitForTimeout(800);
@@ -137,6 +154,9 @@ try {
   await page.goto(`${base}/network-pulse`);
   await page.getByRole('heading', { name: 'Network Pulse: historical replay' }).waitFor();
   await page.screenshot({ path: '../docs/release-evidence/replay-mobile.png', fullPage: true });
+  await page.goto(`${base}/url-check`);
+  await page.getByRole('button', { name: 'Lookalike brand' }).click();
+  await page.screenshot({ path: '../docs/release-evidence/url-check-demo.png', fullPage: true });
   await page.context().setOffline(true);
   await page.locator('.saved-history summary').click();
   await page.getByRole('button', { name: 'Refresh history' }).click();
@@ -153,13 +173,21 @@ try {
   assert.equal(await page.locator('main').evaluate(element => document.activeElement === element), true);
   assert.deepEqual(external, []);
   checks.push('Keyboard skip link, mobile menu navigation, no external network dependencies');
-  checks.push('Seven routes at 390/768/1440; reduced motion; offline history error/retry; axe accessibility scans');
+  checks.push('Eight routes at 390/768/1440; reduced motion; offline history error/retry; axe accessibility scans');
   assert.deepEqual(errors, []);
   await writeFile('../docs/release-evidence/browser-results.json', JSON.stringify({ checks, scans, errors }, null, 2));
   const violations = scans.flatMap(scan => scan.violations.map(item => ({ route: scan.route, ...item })));
   console.log(JSON.stringify({ checks, violations, pageErrors: errors }, null, 2));
   assert.equal(violations.length, 0, 'Accessibility violations must be fixed');
 } finally {
-  for (const id of created) await page.request.delete(`${base}/api/v1/analyses/${id}`).catch(() => {});
+  const token = await page.evaluate(() => {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith('sb-') || !key.endsWith('-auth-token')) continue;
+      try { return JSON.parse(localStorage.getItem(key) || '{}').access_token || null; } catch { return null; }
+    }
+    return null;
+  }).catch(() => null);
+  for (const id of created) await page.request.delete(`${base}/api/v1/analyses/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} }).catch(() => {});
   await browser.close();
 }

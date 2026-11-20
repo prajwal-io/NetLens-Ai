@@ -5,17 +5,44 @@ import argparse
 import csv
 import io
 import math
+import os
 from pathlib import Path
 import httpx
 from pypdf import PdfReader
+from app.core.config import settings
+
+
+def authenticate_test_account(email: str, password: str) -> str:
+    try:
+        response = httpx.post(
+            f"{settings.supabase_url.rstrip('/')}/auth/v1/token?grant_type=password",
+            headers={"apikey": settings.supabase_publishable_key},
+            json={"email": email, "password": password}, timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        raise RuntimeError("Could not sign in to Supabase with the configured test account.") from None
+    token = payload.get("access_token") if isinstance(payload, dict) else None
+    if not isinstance(token, str) or not token:
+        raise RuntimeError("Supabase did not return an access token for the configured test account.")
+    return token
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     args = parser.parse_args()
+    email, password = os.getenv("NETSIGHT_TEST_EMAIL"), os.getenv("NETSIGHT_TEST_PASSWORD")
+    if not email or not password or not settings.supabase_url or not settings.supabase_publishable_key:
+        parser.error("Set NETSIGHT_TEST_EMAIL and NETSIGHT_TEST_PASSWORD for a dedicated Supabase test account, and configure the API Supabase URL/key.")
+    try:
+        token = authenticate_test_account(email, password)
+    except RuntimeError as exc:
+        parser.error(f"{exc} Check that Auth is available and the credentials are valid.")
     created = []
-    with httpx.Client(base_url=args.base_url.rstrip("/") + "/api/v1", timeout=90) as client:
+    with httpx.Client(base_url=args.base_url.rstrip("/") + "/api/v1", timeout=90,
+                      headers={"Authorization": f"Bearer {token}"}) as client:
         try:
             def body(response):
                 response.raise_for_status()

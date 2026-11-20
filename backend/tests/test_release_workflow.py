@@ -153,6 +153,10 @@ def test_bundled_replays_run_same_model_and_save(client):
     assert len(scenarios) == 2
     for scenario in scenarios:
         content, _ = replay.load_scenario(scenario["id"])
+        download = client.get(f"/api/v1/replays/{scenario['id']}/download")
+        assert download.status_code == 200
+        assert download.content == content
+        assert download.headers["content-type"].startswith("text/csv")
         result = client.post(f"/api/v1/replays/{scenario['id']}/analyze").json()
         direct = client.post("/api/v1/traffic/analyze", files={"file": ("same.csv", content)}).json()
         assert result["source_type"] == "historical_replay"

@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: netlens-api
+    runtime: python
+    rootDir: backend
+    buildCommand: python -m pip install -r requirements.lock.txt
+    startCommand: python -m scripts.provision_model && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/ready
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: NETSIGHT_STORAGE_BACKEND
+        value: supabase
+      - key: NETSIGHT_SUPABASE_URL
+        sync: false
+      - key: NETSIGHT_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: NETSIGHT_SUPABASE_SECRET_KEY
+        sync: false
+      - key: NETSIGHT_WEBRISK_API_KEY
+        sync: false
+      - key: NETSIGHT_CORS_ORIGINS
+        sync: false
+      - key: NETSIGHT_MODEL_ARTIFACT_PATH
+        value: /opt/render/project/src/backend/ml/artifacts/netsight-model.joblib
+      - key: NETSIGHT_MODEL_ARTIFACT_URL
+        sync: false
+      - key: NETSIGHT_MODEL_ARTIFACT_SHA256
+        sync: false

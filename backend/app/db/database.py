@@ -36,3 +36,8 @@ def initialize():
         connection.execute("INSERT OR IGNORE INTO schema_version(version) VALUES (3)")
 
         connection.execute("CREATE INDEX IF NOT EXISTS analyses_created ON analyses(created_at DESC, id DESC)")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(analyses)")}
+        if "user_id" not in columns:
+            connection.execute("ALTER TABLE analyses ADD COLUMN user_id TEXT")
+        connection.execute("CREATE INDEX IF NOT EXISTS analyses_owner_created ON analyses(user_id, created_at DESC, id DESC)")
+        connection.execute("INSERT OR IGNORE INTO schema_version(version) VALUES (4)")

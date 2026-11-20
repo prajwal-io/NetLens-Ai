@@ -47,4 +47,5 @@ websockets==17.4
 pillow==13.0.0
 reportlab==4.4.9
 
-pypdf==6.7.5
+pypdf==7.1.1
+scapy==2.7.0

@@ -1,0 +1,43 @@
+{
+  "checks": [
+    "Real benchmark features: validation -> active model -> SQLite",
+    "Reload persistence; four linked views; topology controls; full flow details",
+    "Server CSV and PDF downloads",
+    "Analyst-approved simulated IPS, persisted after reload; dismiss/undo; decision in exported CSV",
+    "Real replay inference; play/pause/restart/speed/seek; no invented topology",
+    "Command Center reflects live model metadata and persisted analyst response decisions",
+    "Keyboard skip link, mobile menu navigation, no external network dependencies",
+    "Seven routes at 390/768/1440; reduced motion; offline history error/retry; axe accessibility scans"
+  ],
+  "scans": [
+    {
+      "route": "landing",
+      "violations": []
+    },
+    {
+      "route": "command-center",
+      "violations": []
+    },
+    {
+      "route": "network-pulse",
+      "violations": []
+    },
+    {
+      "route": "traffic-analyzer",
+      "violations": []
+    },
+    {
+      "route": "threat-investigation",
+      "violations": []
+    },
+    {
+      "route": "model-lab",
+      "violations": []
+    },
+    {
+      "route": "reports",
+      "violations": []
+    }
+  ],
+  "errors": []
+}

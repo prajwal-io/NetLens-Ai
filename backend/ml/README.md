@@ -14,7 +14,7 @@ python -m ml.evaluate
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-With the API running, run `python scripts/check_setup.py` from `backend/`. It checks the health endpoint and fails if the evaluated model is not loaded.
+With the API running, run `python -m scripts.check_setup` from `backend/`. It checks the health endpoint and fails if the evaluated model is not loaded.
 
 The downloader stages both splits outside the active dataset folder. It checks expected byte sizes, canonical row counts, the required feature header, and SHA-256 values pinned to the exact mirror commit before replacing either active split or the manifest. If one download or check fails, the current dataset remains in place. The mirror reverses the source filenames, so the pinned digest and row count also verify each split's role. Dataset contents are not tracked by Git.
 

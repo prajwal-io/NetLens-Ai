@@ -10,7 +10,7 @@
 
 ## Current implementation
 
-The local application connects six workspace modules to one FastAPI workflow: validate a compatible flow CSV, run the saved Random Forest pipeline, store the result in SQLite, and reuse that saved analysis for the Command Center, Network Pulse, Threat Investigation, and CSV/PDF reports. Model Lab displays the model evidence; it is not part of prediction execution.
+The application connects six workspace modules to one FastAPI workflow: authenticate with Supabase, validate a compatible flow CSV, run the saved Random Forest pipeline, and reuse the owner-scoped result across the Command Center, Network Pulse, Threat Investigation, and CSV/PDF reports. Local demos store results in SQLite; hosted deployments can use Supabase Postgres with RLS. Model Lab displays model evidence; it is not part of prediction execution.
 
 The installed model is **Random Forest v4** trained and evaluated on the hash-pinned UNSW-NB15 partitions. Its reported official held-out accuracy is **90.69%**, malicious recall **96.87%**, and false-positive rate **16.89%** (6,248 false alerts among 37,000 normal flows). The 5% false-positive limit applies only to validation threshold selection; it did not hold on the official test split. See [the complete evaluation and limitations](docs/model-evaluation.md).
 
@@ -286,7 +286,8 @@ The exported reports must match the predictions and totals shown in the applicat
 
 ### Database
 
-- SQLite
+- SQLite for local demos
+- Supabase Postgres with row-level security for hosted storage
 
 ### Reporting
 
@@ -304,13 +305,13 @@ The exported reports must match the predictions and totals shown in the applicat
 
 ### Hosting Strategy
 
-The application will initially run locally.
+The application runs locally for development and faculty demos; Vercel and Render configuration is included for optional hosted deployment.
 
 Frontend and backend will be executed as separate development services.
 
 A cloud deployment is optional and must not block the project deadline.
 
-The complete faculty demonstration should work without depending on internet connectivity.
+After installing dependencies, preparing the model, and starting the local Supabase stack, the faculty demonstration does not require a cloud Auth connection.
 
 ---
 
@@ -318,11 +319,14 @@ The complete faculty demonstration should work without depending on internet con
 
 ```mermaid
 flowchart LR
-  U[CSV upload or historical replay] --> R[React workspace and API client]
-  R --> V[FastAPI validation]
+  U[User] --> AU[Supabase Auth]
+  AU --> R[React workspace and API client]
+  R -->|Bearer token| V[FastAPI authentication and validation]
   V --> M[Saved preprocessing and Random Forest]
   M --> P[Normal or malicious label and score]
-  P --> S[Transactional SQLite snapshot]
+  P --> S[Owner-scoped analysis snapshot]
+  S -->|Local demo| DB[SQLite]
+  S -->|Hosted| PG[Supabase Postgres with RLS]
   S --> D[Command Center and Network Pulse]
   S --> I[Threat Investigation and saved analyst decisions]
   S --> X[CSV and PDF reports]
@@ -331,7 +335,7 @@ flowchart LR
   A --> M
 ```
 
-The CSV analysis path, historical replay input, SQLite analysis history, backend CSV export, and PDF reports are implemented through the stages above. Actual classifications are shared across the main workspace pages. Device topology uses optional validated source/destination IP columns; files without these columns do not produce invented relationships. See [the architecture review](docs/architecture-review.md) for the stage-by-stage implementation map.
+The CSV analysis path, historical replay input, owner-scoped history, backend CSV export, and PDF reports are implemented through the stages above. Actual classifications are shared across the main workspace pages. Device topology uses optional validated source/destination IP columns; files without these columns do not produce invented relationships. See [the architecture review](docs/architecture-review.md) for the stage-by-stage implementation map.
 
 ### Architecture Principles
 
@@ -445,6 +449,8 @@ It cannot automatically claim to:
 
 These capabilities require additional implementations and evaluations.
 
+The separate **URL Check Demo** (`/url-check`) shows local heuristic signals such as HTTP, punycode, IP-address hosts, long URLs, and brand-like names on unrelated domains. It does not visit the URL, check threat reputation, or guarantee that a site is safe; it is not part of the evaluated network-flow model.
+
 ---
 
 ## 9. API Design
@@ -460,6 +466,8 @@ Base URL:
 | GET | /health | Backend and model status |
 | GET | /model/schema | Supported CSV feature contract |
 | POST | /traffic/validate | Validate CSV input |
+
+`/health`, `/model/schema`, and `/model/info` are public. Protected data and analysis endpoints require a Supabase access token; auth setup and endpoint access rules are documented in [the auth guide](docs/auth-and-deployment.md).
 
 ### Phase 2 API
 
@@ -702,6 +710,7 @@ Do not commit:
 - Node.js and npm
 - Python 3.12
 - Git
+- Docker Desktop and Supabase CLI for local authentication
 
 ### Backend setup
 
@@ -720,16 +729,24 @@ The evaluated model artifact and raw dataset are generated locally and are not s
 python -m ml.download_dataset
 python -m ml.train
 python -m ml.evaluate
-python scripts/check_setup.py
 ```
 
-Then start FastAPI:
+For local sign-in, install Docker Desktop and the Supabase CLI, configure the frontend/backend environment values from the [auth setup guide](docs/auth-and-deployment.md), then start the local Auth database and apply its migration from the repository root:
+
+```powershell
+supabase start
+supabase db reset
+```
+
+Start FastAPI from `backend/`:
 
 ```powershell
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 If a verified local model artifact already exists, the download, train, and evaluate steps are not needed at each startup. See the [ML pipeline guide](backend/ml/README.md) for artifact and evaluation behavior.
+
+After FastAPI is running, check API, model, and Auth configuration with `python -m scripts.check_setup` from `backend/`.
 
 ### Frontend setup
 
@@ -750,9 +767,13 @@ After installing dependencies and preparing the model once, the faculty demonstr
 With the API running, from `backend/` run:
 
 ```powershell
-python scripts/check_release.py
+$env:NETSIGHT_TEST_EMAIL='your-dedicated-test-account@example.test'
+$env:NETSIGHT_TEST_PASSWORD='test-password'
+python -m scripts.check_release
 python -m pytest tests -q
 ```
+
+`check_release.py` signs in through the configured Supabase Auth and requires a dedicated test account; it removes the analysis records it creates.
 
 From `frontend/`, run `npm run build` for the production TypeScript and Vite build, `npm run test:smoke` for the fast browser smoke check, and `npm run test:release` for the full browser workflow and accessibility checks. See [the local runbook](docs/phase-1.md) for details.
 
@@ -913,12 +934,11 @@ Features outside the initial mini-project scope:
 4. Additional anomaly-detection models.
 5. Real-time alert notifications.
 6. Extended analytics and comparison.
-7. Authenticated multiuser accounts.
-8. Long-term analysis storage.
-9. Model retraining interface.
-10. Advanced network topology visualization.
+7. Long-term analysis retention policies.
+8. Model retraining interface.
+9. Advanced network topology visualization.
 
-These are future possibilities, not features promised for November 10.
+These are future possibilities, not features promised for November 10. Supabase-managed accounts and user-scoped storage are implemented; hosted credentials and deployment still need configuration.
 
 ---
 
@@ -991,7 +1011,7 @@ See [local development setup](docs/phase-1.md), [architecture and API contracts]
 
 To download and retrain the model, from `backend/` run `python -m ml.download_dataset`, `python -m ml.train`, and `python -m ml.evaluate`. The normalized raw CSVs stay under the ignored `data/raw/unsw-nb15/` directory. The trained artifact and metadata are generated under `backend/ml/artifacts/` and are not committed.
 
-Analysis snapshots and per-flow features are saved in SQLite. Historical replay uses bundled, hash-verified official holdout excerpts and the same inference service as uploads. Reports are generated from saved results. Neither replay nor uploaded analysis is live packet capture. See [completion and release checks](docs/release-completion.md).
+Analysis snapshots and per-flow features are saved in owner-scoped storage: SQLite locally or Supabase Postgres with RLS when hosted. Historical replay uses bundled, hash-verified official holdout excerpts and the same inference service as uploads. Reports are generated from saved results. Neither replay nor uploaded analysis is live packet capture. See [completion and release checks](docs/release-completion.md).
 
 
 ## Frontend quality update
@@ -999,3 +1019,6 @@ All eight review priorities are implemented. See [quality checklist and measured
 
 ## Frontend completion pass
 See [the 18-area frontend checklist](docs/frontend-completion.md) for completed interactions, tests and remaining backend dependencies. The updated frontend includes a pausable background loop, session preferences, cancellable uploads, investigation filters/mobile details, network zoom/reset, real validation receipts, skeletons and error recovery.
+
+## Authentication and deployment
+Supabase email/password authentication, protected workspace routes, user-scoped history, PostgreSQL RLS migration, and Vercel/Render configuration are covered in [the auth and deployment guide](docs/auth-and-deployment.md). Hosted credentials and model artifact provisioning remain deployment prerequisites.

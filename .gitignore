@@ -9,6 +9,8 @@ __pycache__/
 *.db-wal
 *.db-shm
 .env
+.env.*.local
+supabase/.temp/
 test-results/
 .pytest-tmp/
 backend/.pytest-workspace-qa/
@@ -24,3 +26,7 @@ backend/.pytest-workspace-qa/
 
 /docs/release-evidence/*.png
 /backend/.pytest-tmp-release*/
+
+.npm-cache/
+
+.env.local

@@ -10,7 +10,7 @@ export function AnalysisHistory() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const refresh = useCallback(async (signal?: AbortSignal) => {
-    try { setHistory(await api.history(offset, signal)); }
+    try { setHistory(await api.history(offset, signal)); setError(''); }
     catch (reason) { if (!signal?.aborted) setError(reason instanceof Error ? reason.message : 'Could not load history.'); }
   }, [offset]);
   useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort(); }, [refresh, analysis?.analysis_id]);
@@ -26,14 +26,14 @@ export function AnalysisHistory() {
     finally { setBusy(false); }
   }
   async function remove(id: string) {
-    if (!window.confirm('Delete this saved analysis and its flow features from the local database? This cannot be undone.')) return;
+    if (!window.confirm('Delete this saved analysis and its flow features? This cannot be undone.')) return;
     setBusy(true); setError('');
     try { await api.deleteAnalysis(id); if (analysis?.analysis_id === id) setAnalysis(null); setNotice('Analysis deleted.'); if (offset === 0) await refresh(); else setOffset(0); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not delete analysis.'); }
     finally { setBusy(false); }
   }
   return <details className="saved-history"><summary>Saved analyses <span>{history ? `(${history.total})` : '(loading)'}</span></summary>
-    <p>Results and validated flow features are stored in SQLite on this computer. Only the selected analysis ID is stored in the browser. Delete an analysis below to remove its records.</p>
+    <p>Your saved analyses include results and validated flow features. Only the selected analysis ID is stored in the browser. Delete an analysis below to remove its records.</p>
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     <button disabled={busy} onClick={() => { setError(''); void refresh(); }}>Refresh history</button>
     {history?.items.length === 0 && <p>No saved analyses. Upload a compatible CSV or analyze a historical replay.</p>}
